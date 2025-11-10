@@ -1,0 +1,41 @@
+scenes:
+  - id: indoor_livingroom
+    name: "Гостиная"
+    group: "indoor"
+    prompts:
+      far: "wide shot of cozy living room interior, modern furniture, warm lighting, photorealistic"
+      medium: "medium shot of living room with sofa and coffee table, natural daylight, high detail"
+      close: "close-up of living room details like bookshelves and decor, soft shadows"
+  
+  - id: indoor_kitchen
+    name: "Кухня"
+    group: "indoor"
+    prompts:
+      far: "full kitchen panorama, clean and modern, wooden cabinets, island counter"
+      medium: "medium view of kitchen with dining area, stainless steel appliances"
+      close: "close shot of kitchen counter with fruits and utensils, bright lighting"
+  
+  - id: outdoor_garden
+    name: "Сад"
+    group: "outdoor"
+    prompts:
+      far: "wide garden landscape, green lawn, flowers, sunny day"
+      medium: "medium shot of garden path with benches, blooming plants"
+      close: "close-up of garden flowers and leaves, dew drops, natural colors"
+  
+  - id: outdoor_beach
+    name: "Пляж"
+    group: "outdoor"
+    prompts:
+      far: "beach scene with ocean waves, sandy shore, palm trees in distance"
+      medium: "medium view of beach with umbrellas and lounge chairs"
+      close: "close shot of seashells and sand, gentle waves"
+
+groups:
+  indoor:
+    name: "Внутренние сцены"
+    scenes: ["indoor_livingroom", "indoor_kitchen"]
+  
+  outdoor:
+    name: "Наружные сцены"
+    scenes: ["outdoor_garden", "outdoor_beach"]

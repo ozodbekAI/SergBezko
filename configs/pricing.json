@@ -1,0 +1,57 @@
+{
+  "packages": [
+    {
+      "label": "30 кредитов",
+      "credits": 30,
+      "price": 1
+    },
+    {
+      "label": "120 кредитов",
+      "credits": 120,
+      "price": 1
+    },
+    {
+      "label": "350 кредитов",
+      "credits": 350,
+      "price": 1
+    }
+  ],
+  "product_card": {
+    "per_result": 1
+  },
+  "normalize": {
+    "own_model": 2,
+    "new_model": 2
+  },
+  "video": {
+    "balance": {
+      "cost": 30,
+      "model": "grok-imagine/image-to-video",
+      "duration": "~6 сек",
+      "resolution": "720P"
+    },
+    "pro_6": {
+      "cost": 45,
+      "model": "hailuo/2-3-image-to-video-pro",
+      "duration": "~6 сек",
+      "resolution": "768P"
+    },
+    "pro_10": {
+      "cost": 90,
+      "model": "hailuo/2-3-image-to-video-pro",
+      "duration": "~10 сек",
+      "resolution": "768P"
+    },
+    "super_6": {
+      "cost": 80,
+      "model": "hailuo/2-3-image-to-video-pro",
+      "duration": "~6 сек",
+      "resolution": "1080P"
+    }
+  },
+  "photo": {
+    "scene_change": 1,
+    "pose_change": 1,
+    "custom_scenario": 1
+  }
+}
