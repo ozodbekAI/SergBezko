@@ -1,3 +1,4 @@
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -6,15 +7,16 @@ from database import async_session_maker
 from database.repositories import (UserRepository, TaskRepository, PaymentRepository, BotMessageRepository, 
                                    PoseElementRepository, SceneElementRepository,
                                    AdminLogRepository)
-from states import AdminMessageStates, AdminPoseStates, AdminSceneStates
+from states import AdminMessageStates, AdminPoseStates, AdminSceneStates, AdminUserStates
 from admin_keyboards import (get_admin_main_menu, get_message_selection_keyboard,
                              get_media_type_keyboard, get_pose_management_keyboard,
                              get_scene_management_keyboard, get_pose_groups_keyboard,
                              get_scene_groups_keyboard, get_element_type_keyboard,
-                             get_admin_back_keyboard)
+                             get_admin_back_keyboard, get_user_management_menu,
+                             get_user_detail_keyboard, get_balance_action_keyboard,
+                             get_cancel_keyboard, get_user_list_keyboard)
 from keyboards import get_main_menu
 import logging
-import re
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -82,6 +84,386 @@ async def admin_back_handler(callback: CallbackQuery, state: FSMContext):
     )
 
 
+@router.callback_query(F.data == "admin_users")
+async def admin_users_menu(callback: CallbackQuery, state: FSMContext):
+    logger.info(f"Admin users callback: {callback.data}")
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    await callback.answer()
+    await state.clear()
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        total_users = await user_repo.get_total_users()
+        active_users = await user_repo.get_total_active_users()
+        banned_count = await user_repo.get_banned_count()
+    
+    await safe_edit_text(
+        callback,
+        f"👥 <b>Управление пользователями</b>\n\n"
+        f"📊 Всего пользователей: <b>{total_users}</b>\n"
+        f"🟢 Активных (30 дней): <b>{active_users}</b>\n"
+        f"🚫 Заблокированных: <b>{banned_count}</b>\n\n"
+        f"Выберите действие:",
+        reply_markup=get_user_management_menu()
+    )
+
+
+@router.callback_query(F.data == "user_search")
+async def user_search_start(callback: CallbackQuery, state: FSMContext):
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    await callback.answer()
+    await state.set_state(AdminUserStates.searching_user)
+    
+    await safe_edit_text(
+        callback,
+        "🔍 <b>Поиск пользователя</b>\n\n"
+        "Введите для поиска:\n"
+        "• Username (без @)\n"
+        "• Telegram ID\n"
+        "• Имя пользователя\n\n"
+        "<i>Например: john_doe или 123456789 или Иван</i>",
+        reply_markup=get_cancel_keyboard("admin_users")
+    )
+
+
+@router.message(AdminUserStates.searching_user, F.text)
+async def user_search_process(message: Message, state: FSMContext):
+    search_query = message.text.strip()
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        users = await user_repo.search_users(search_query)
+    
+    if not users:
+        await message.answer(
+            f"❌ Пользователи не найдены по запросу: <code>{search_query}</code>",
+            parse_mode="HTML",
+            reply_markup=get_cancel_keyboard("admin_users")
+        )
+        return
+    
+    if len(users) == 1:
+        user = users[0]
+        await state.clear()
+        await show_user_detail(message, user)
+    else:
+        await state.clear()
+        await message.answer(
+            f"🔍 Найдено пользователей: <b>{len(users)}</b>\n\n"
+            f"Выберите пользователя:",
+            parse_mode="HTML",
+            reply_markup=get_user_list_keyboard(users)
+        )
+
+
+async def show_user_detail(message_or_callback, user):
+    status = "🚫 Заблокирован" if user.is_banned else "✅ Активен"
+    admin_status = "👑 Администратор" if user.is_admin else "👤 Пользователь"
+    
+    text = (
+        f"👤 <b>Информация о пользователе</b>\n\n"
+        f"<b>ID:</b> <code>{user.telegram_id}</code>\n"
+        f"<b>Username:</b> {'@' + user.username if user.username else 'Не указан'}\n"
+        f"<b>Имя:</b> {user.first_name or 'Не указано'}\n"
+        f"<b>Фамилия:</b> {user.last_name or 'Не указана'}\n\n"
+        f"<b>Статус:</b> {status}\n"
+        f"<b>Роль:</b> {admin_status}\n"
+        f"<b>Баланс:</b> 💰 <b>{user.balance}</b> кредитов\n\n"
+        f"<b>Зарегистрирован:</b> {user.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+        f"<b>Последняя активность:</b> {user.last_activity.strftime('%d.%m.%Y %H:%M')}"
+    )
+    
+    if isinstance(message_or_callback, Message):
+        await message_or_callback.answer(
+            text,
+            reply_markup=get_user_detail_keyboard(user.telegram_id, user.is_banned)
+        )
+    else:
+        await safe_edit_text(
+            message_or_callback,
+            text,
+            reply_markup=get_user_detail_keyboard(user.telegram_id, user.is_banned)
+        )
+
+
+@router.callback_query(F.data.startswith("user_view_"))
+async def user_view_handler(callback: CallbackQuery, state: FSMContext):
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    await callback.answer()
+    user_id = int(callback.data.replace("user_view_", ""))
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        user = await user_repo.get_user_by_telegram_id(user_id)
+    
+    if not user:
+        await callback.answer("❌ Пользователь не найден", show_alert=True)
+        return
+    
+    await show_user_detail(callback, user)
+
+
+@router.callback_query(F.data.startswith("user_ban_"))
+async def user_ban_handler(callback: CallbackQuery, state: FSMContext):
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    user_id = int(callback.data.replace("user_ban_", ""))
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        user = await user_repo.ban_user(user_id)
+        
+        log_repo = AdminLogRepository(session)
+        await log_repo.log_action(
+            callback.from_user.id,
+            "ban_user",
+            f"Banned user {user_id}"
+        )
+    
+    await callback.answer("✅ Пользователь заблокирован")
+    await show_user_detail(callback, user)
+
+
+@router.callback_query(F.data.startswith("user_unban_"))
+async def user_unban_handler(callback: CallbackQuery, state: FSMContext):
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    user_id = int(callback.data.replace("user_unban_", ""))
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        user = await user_repo.unban_user(user_id)
+        
+        log_repo = AdminLogRepository(session)
+        await log_repo.log_action(
+            callback.from_user.id,
+            "unban_user",
+            f"Unbanned user {user_id}"
+        )
+    
+    await callback.answer("✅ Пользователь разблокирован")
+    await show_user_detail(callback, user)
+
+
+@router.callback_query(F.data.startswith("user_balance_"))
+async def user_balance_menu(callback: CallbackQuery, state: FSMContext):
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    await callback.answer()
+    user_id = int(callback.data.replace("user_balance_", ""))
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        user = await user_repo.get_user_by_telegram_id(user_id)
+    
+    if not user:
+        await callback.answer("❌ Пользователь не найден", show_alert=True)
+        return
+    
+    await safe_edit_text(
+        callback,
+        f"💰 <b>Изменение баланса</b>\n\n"
+        f"Пользователь: {'@' + user.username if user.username else f'ID: {user.telegram_id}'}\n"
+        f"Текущий баланс: <b>{user.balance}</b> кредитов\n\n"
+        f"Выберите действие:",
+        reply_markup=get_balance_action_keyboard(user_id)
+    )
+
+
+@router.callback_query((F.data.startswith("balance_add_")) | (F.data.startswith("balance_subtract_")))
+async def balance_action_start(callback: CallbackQuery, state: FSMContext):
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    await callback.answer()
+    
+    action = "add" if callback.data.startswith("balance_add_") else "subtract"
+    user_id = int(callback.data.split("_")[-1])
+    
+    await state.set_state(AdminUserStates.adding_credits)
+    await state.update_data(user_id=user_id, action=action)
+    
+    action_text = "добавить" if action == "add" else "убавить"
+    
+    await safe_edit_text(
+        callback,
+        f"💰 <b>Изменение баланса</b>\n\n"
+        f"Введите количество кредитов для операции <b>{action_text}</b>:\n\n"
+        f"<i>Например: 100</i>",
+        reply_markup=get_cancel_keyboard(f"user_balance_{user_id}")
+    )
+
+
+@router.message(AdminUserStates.adding_credits, F.text)
+async def balance_action_process(message: Message, state: FSMContext):
+    try:
+        amount = int(message.text.strip())
+        if amount <= 0:
+            await message.answer("❌ Количество должно быть положительным числом")
+            return
+    except ValueError:
+        await message.answer("❌ Введите корректное число")
+        return
+    
+    data = await state.get_data()
+    user_id = data["user_id"]
+    action = data["action"]
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        
+        if action == "subtract":
+            amount = -amount
+        
+        user = await user_repo.update_balance(user_id, amount)
+        
+        log_repo = AdminLogRepository(session)
+        await log_repo.log_action(
+            message.from_user.id,
+            "update_balance",
+            f"{'Added' if amount > 0 else 'Subtracted'} {abs(amount)} credits to user {user_id}"
+        )
+    
+    await state.clear()
+    await message.answer(
+        f"✅ Баланс успешно изменен!\n\n"
+        f"Новый баланс: <b>{user.balance}</b> кредитов",
+        parse_mode="HTML",
+        reply_markup=get_user_detail_keyboard(user_id, user.is_banned)
+    )
+
+
+@router.callback_query(F.data.startswith("user_tasks_"))
+async def user_tasks_handler(callback: CallbackQuery, state: FSMContext):
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    await callback.answer()
+    user_id = int(callback.data.replace("user_tasks_", ""))
+    
+    async with async_session_maker() as session:
+        task_repo = TaskRepository(session)
+        tasks = await task_repo.get_user_tasks(user_id, limit=20)
+        
+        user_repo = UserRepository(session)
+        user = await user_repo.get_user_by_telegram_id(user_id)
+    
+    if not tasks:
+        await safe_edit_text(
+            callback,
+            f"📊 <b>Статистика задач</b>\n\n"
+            f"У пользователя {'@' + user.username if user.username else f'ID: {user_id}'} нет задач.",
+            reply_markup=get_user_detail_keyboard(user_id, user.is_banned)
+        )
+        return
+    
+    completed = sum(1 for t in tasks if t.status.value == "completed")
+    failed = sum(1 for t in tasks if t.status.value == "failed")
+    pending = sum(1 for t in tasks if t.status.value == "pending")
+    
+    text = (
+        f"📊 <b>Статистика задач</b>\n\n"
+        f"Пользователь: {'@' + user.username if user.username else f'ID: {user_id}'}\n\n"
+        f"✅ Завершено: <b>{completed}</b>\n"
+        f"❌ Ошибки: <b>{failed}</b>\n"
+        f"⏳ В обработке: <b>{pending}</b>\n"
+        f"📋 Всего: <b>{len(tasks)}</b>\n\n"
+        f"<b>Последние задачи:</b>\n"
+    )
+    
+    for task in tasks[:10]:
+        status_emoji = {"completed": "✅", "failed": "❌", "pending": "⏳", "processing": "🔄"}
+        emoji = status_emoji.get(task.status.value, "❓")
+        text += f"{emoji} {task.task_type.value} - {task.created_at.strftime('%d.%m %H:%M')}\n"
+    
+    await safe_edit_text(
+        callback,
+        text,
+        reply_markup=get_user_detail_keyboard(user_id, user.is_banned)
+    )
+
+
+@router.callback_query(F.data == "user_banned_list")
+async def user_banned_list_handler(callback: CallbackQuery, state: FSMContext):
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    await callback.answer()
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        banned_users = await user_repo.get_banned_users(limit=20)
+    
+    if not banned_users:
+        await safe_edit_text(
+            callback,
+            "🚫 <b>Заблокированные пользователи</b>\n\n"
+            "Заблокированных пользователей нет.",
+            reply_markup=get_cancel_keyboard("admin_users")
+        )
+        return
+    
+    await safe_edit_text(
+        callback,
+        f"🚫 <b>Заблокированные пользователи</b>\n\n"
+        f"Всего: <b>{len(banned_users)}</b>\n\n"
+        f"Выберите пользователя:",
+        reply_markup=get_user_list_keyboard(banned_users)
+    )
+
+
+@router.callback_query((F.data == "user_all_list") | (F.data.startswith("user_list_")))
+async def user_all_list_handler(callback: CallbackQuery, state: FSMContext):
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    await callback.answer()
+    
+    offset = 0
+    if callback.data.startswith("user_list_"):
+        offset = int(callback.data.replace("user_list_", ""))
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        users = await user_repo.get_all_users(limit=20, offset=offset)
+    
+    if not users:
+        await safe_edit_text(
+            callback,
+            "👥 <b>Все пользователи</b>\n\n"
+            "Пользователи не найдены.",
+            reply_markup=get_cancel_keyboard("admin_users")
+        )
+        return
+    
+    await safe_edit_text(
+        callback,
+        f"👥 <b>Все пользователи</b>\n\n"
+        f"Показано с {offset + 1} по {offset + len(users)}\n\n"
+        f"Выберите пользователя:",
+        reply_markup=get_user_list_keyboard(users, offset)
+    )
+
+
 @router.callback_query(F.data == "admin_stats")
 async def admin_stats_handler(callback: CallbackQuery, state: FSMContext):
     logger.info(f"Admin stats callback: {callback.data}")
@@ -123,9 +505,48 @@ async def admin_stats_handler(callback: CallbackQuery, state: FSMContext):
 
 
 
+@router.callback_query(F.data == "admin_stats")
+async def admin_stats_handler(callback: CallbackQuery, state: FSMContext):
+    logger.info(f"Admin stats callback: {callback.data}")
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    await callback.answer()
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        task_repo = TaskRepository(session)
+        payment_repo = PaymentRepository(session)
+        
+        total_users = await user_repo.get_total_users()
+        active_users = await user_repo.get_total_active_users()
+        total_balance = await user_repo.get_total_balance()
+        total_tasks = await task_repo.get_total_tasks()
+        completed_tasks = await task_repo.get_completed_tasks()
+        total_payments = await payment_repo.get_total_payments()
+        total_credits = await payment_repo.get_total_credits_sold()
+    
+    stats_text = (
+        "📊 <b>Статистика бота</b>\n\n"
+        f"👥 Всего пользователей: <b>{total_users}</b>\n"
+        f"🟢 Активных (30 дней): <b>{active_users}</b>\n"
+        f"💰 Общий баланс: <b>{total_balance}</b> кредитов\n\n"
+        f"📋 Всего задач: <b>{total_tasks}</b>\n"
+        f"✅ Завершенных: <b>{completed_tasks}</b>\n\n"
+        f"💳 Успешных платежей: <b>{total_payments}</b>\n"
+        f"🎁 Продано кредитов: <b>{total_credits}</b>"
+    )
+    
+    await safe_edit_text(
+        callback,
+        stats_text,
+        reply_markup=get_admin_back_keyboard()
+    )
+
+
 @router.callback_query(F.data == "admin_messages")
 async def admin_messages_menu(callback: CallbackQuery, state: FSMContext):
-    """Xabarlarni boshqarish menyusi"""
     logger.info(f"Admin messages callback: {callback.data}")
     if not await check_admin(callback):
         await callback.answer("❌ Нет доступа")
@@ -174,7 +595,6 @@ async def select_message_to_edit(callback: CallbackQuery, state: FSMContext):
 
 @router.message(AdminMessageStates.entering_text, F.text)
 async def message_text_received(message: Message, state: FSMContext):
-    """Xabar matni qabul qilish"""
     data = await state.get_data()
     
     await state.update_data(new_text=message.text)
@@ -220,7 +640,6 @@ async def media_type_selected(callback: CallbackQuery, state: FSMContext):
         )
         await state.clear()
     else:
-        # Media yuklashni kutish
         await state.update_data(media_type=media_type)
         await safe_edit_text(
             callback,
@@ -231,7 +650,6 @@ async def media_type_selected(callback: CallbackQuery, state: FSMContext):
 
 @router.message(AdminMessageStates.uploading_media, F.photo | F.video)
 async def media_received(message: Message, state: FSMContext):
-    """Media qabul qilish"""
     data = await state.get_data()
     message_key = data["message_key"]
     new_text = data["new_text"]
@@ -266,7 +684,6 @@ async def media_received(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "admin_poses")
 async def admin_poses_menu(callback: CallbackQuery, state: FSMContext):
-    """Pozalarni boshqarish menyusi"""
     logger.info(f"Admin poses callback: {callback.data}")
     if not await check_admin(callback):
         await callback.answer("❌ Нет доступа")
@@ -416,7 +833,6 @@ async def element_prompt_received(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "pose_list")
 async def pose_list_handler(callback: CallbackQuery, state: FSMContext):
-    """Barcha pose elementlarini ko'rsatish"""
     logger.info(f"Pose list callback: {callback.data}")
     if not await check_admin(callback):
         await callback.answer("❌ Нет доступа")
@@ -480,7 +896,6 @@ async def admin_scenes_menu(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "scene_add")
 async def scene_add_start(callback: CallbackQuery, state: FSMContext):
-    """Scene qo'shish boshlash"""
     logger.info(f"Scene add callback: {callback.data}")
     if not await check_admin(callback):
         await callback.answer("❌ Нет доступа")
@@ -499,7 +914,6 @@ async def scene_add_start(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(AdminSceneStates.selecting_group, F.data.startswith("scene_group_"))
 async def scene_group_selected(callback: CallbackQuery, state: FSMContext):
-    """Scene guruhi tanlangan"""
     logger.info(f"Scene group callback: {callback.data}")
     if not await check_admin(callback):
         await callback.answer("❌ Нет доступа")
@@ -584,7 +998,6 @@ async def scene_prompt_far_received(message: Message, state: FSMContext):
 
 @router.message(AdminSceneStates.entering_prompt_medium, F.text)
 async def scene_prompt_medium_received(message: Message, state: FSMContext):
-    """Medium prompt qabul qilish"""
     prompt_medium = message.text.strip()
     await state.update_data(prompt_medium=prompt_medium)
     
@@ -707,7 +1120,6 @@ async def scene_list_handler(callback: CallbackQuery, state: FSMContext):
             text += f"    Far: <code>{elem.prompt_far[:30] if elem.prompt_far else 'N/A'}...</code>\n"
             text += f"    Medium: <code>{elem.prompt_medium[:30] if elem.prompt_medium else 'N/A'}...</code>\n"
             text += f"    Close: <code>{elem.prompt_close[:30] if elem.prompt_close else 'N/A'}...</code>\n"
-            text += f"    Side/Back/Motion: ... (saved)\n"
         text += "\n"
     
     await safe_edit_text(
@@ -717,172 +1129,7 @@ async def scene_list_handler(callback: CallbackQuery, state: FSMContext):
     )
 
 
-
-@router.message(Command("add_credits"))
-async def add_credits_command(message: Message):
-    if not await check_admin_message(message):
-        await message.answer("❌ Нет доступа.")
-        return
-    
-    text = message.text.strip()
-    match = re.match(r'/add_credits\s+@?(\w+)\s+(\d+)', text)
-    if not match:
-        await message.answer("❌ Формат: /add_credits @username N")
-        return
-    
-    username = match.group(1)
-    amount = int(match.group(2))
-    
-    async with async_session_maker() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_user_by_username(username)
-        if not user:
-            await message.answer(f"❌ Пользователь @{username} не найден.")
-            return
-        
-        await user_repo.update_balance(user.telegram_id, amount)
-        log_repo = AdminLogRepository(session)
-        await log_repo.log_action(
-            message.from_user.id,
-            "add_credits",
-            f"Added {amount} credits to @{username} (ID: {user.telegram_id})"
-        )
-    
-    await message.answer(f"✅ Добавлено {amount} кредитов пользователю @{username} (баланс: {user.balance})")
-
-
-@router.message(Command("balance"))
-async def balance_command(message: Message):
-    """ /balance @user - Show user balance """
-    if not await check_admin_message(message):
-        await message.answer("❌ Нет доступа.")
-        return
-    
-    text = message.text.strip()
-    match = re.match(r'/balance\s+@?(\w+)', text)
-    if not match:
-        await message.answer("❌ Формат: /balance @username")
-        return
-    
-    username = match.group(1)
-    
-    async with async_session_maker() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_user_by_username(username)
-        if not user:
-            await message.answer(f"❌ Пользователь @{username} не найден.")
-            return
-    
-    await message.answer(f"💰 Баланс @{username}: <b>{user.balance}</b> кредитов", parse_mode="HTML")
-
-
-@router.message(Command("stats"))
-async def stats_command(message: Message):
-    """ /stats - Global statistics """
-    if not await check_admin_message(message):
-        await message.answer("❌ Нет доступа.")
-        return
-    
-    async with async_session_maker() as session:
-        user_repo = UserRepository(session)
-        task_repo = TaskRepository(session)
-        payment_repo = PaymentRepository(session)
-        
-        total_users = await user_repo.get_total_users()
-        active_users = await user_repo.get_total_active_users()
-        total_balance = await user_repo.get_total_balance()
-        total_tasks = await task_repo.get_total_tasks()
-        completed_tasks = await task_repo.get_completed_tasks()
-        total_payments = await payment_repo.get_total_payments()
-        total_credits = await payment_repo.get_total_credits_sold()
-    
-    stats_text = (
-        f"📊 <b>Статистика</b>\n\n"
-        f"👥 Пользователей: <b>{total_users}</b>\n"
-        f"🟢 Активных: <b>{active_users}</b>\n"
-        f"💰 Общий баланс: <b>{total_balance}</b>\n"
-        f"📋 Задач: <b>{total_tasks}</b> (завершено: <b>{completed_tasks}</b>)\n"
-        f"💳 Платежей: <b>{total_payments}</b>\n"
-        f"🎁 Кредитов продано: <b>{total_credits}</b>"
-    )
-    
-    await message.answer(stats_text, parse_mode="HTML")
-
-
-@router.message(Command("ban"))
-async def ban_command(message: Message):
-    if not await check_admin_message(message):
-        await message.answer("❌ Нет доступа.")
-        return
-    
-    text = message.text.strip()
-    match = re.match(r'/ban\s+@?(\w+)', text)
-    if not match:
-        await message.answer("❌ Формат: /ban @username")
-        return
-    
-    username = match.group(1)
-    
-    async with async_session_maker() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_user_by_username(username)
-        if not user:
-            await message.answer(f"❌ Пользователь @{username} не найден.")
-            return
-        
-        if user.is_banned:
-            await message.answer(f"❌ Пользователь @{username} уже заблокирован.")
-            return
-        
-        await user_repo.ban_user(user.telegram_id)
-        log_repo = AdminLogRepository(session)
-        await log_repo.log_action(
-            message.from_user.id,
-            "ban_user",
-            f"Banned @{username} (ID: {user.telegram_id})"
-        )
-    
-    await message.answer(f"🚫 Пользователь @{username} заблокирован.")
-
-
-@router.message(Command("unban"))
-async def unban_command(message: Message):
-    if not await check_admin_message(message):
-        await message.answer("❌ Нет доступа.")
-        return
-    
-    text = message.text.strip()
-    match = re.match(r'/unban\s+@?(\w+)', text)
-    if not match:
-        await message.answer("❌ Формат: /unban @username")
-        return
-    
-    username = match.group(1)
-    
-    async with async_session_maker() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_user_by_username(username)
-        if not user:
-            await message.answer(f"❌ Пользователь @{username} не найден.")
-            return
-        
-        if not user.is_banned:
-            await message.answer(f"❌ Пользователь @{username} не заблокирован.")
-            return
-        
-        await user_repo.unban_user(user.telegram_id)
-        log_repo = AdminLogRepository(session)
-        await log_repo.log_action(
-            message.from_user.id,
-            "unban_user",
-            f"Unbanned @{username} (ID: {user.telegram_id})"
-        )
-    
-    await message.answer(f"✅ Пользователь @{username} разблокирован.")
-
-
-@router.callback_query(F.data.startswith("admin_") | F.data.startswith("pose_") | F.data.startswith("scene_") | F.data.startswith("elem_type_"))
+@router.callback_query(F.data.startswith("admin_") | F.data.startswith("pose_") | F.data.startswith("scene_") | F.data.startswith("elem_type_") | F.data.startswith("user_"))
 async def debug_unhandled_admin(callback: CallbackQuery, state: FSMContext):
-    """Not handled callback'lar uchun log (faqat admin uchun)."""
     logger.warning(f"Unhandled admin callback: data='{callback.data}', state='{await state.get_state()}', user={callback.from_user.id}")
     await callback.answer("❌ Неизвестное действие. Вернитесь в меню.", show_alert=True)

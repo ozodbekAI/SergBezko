@@ -1,4 +1,4 @@
-from deep_translator import GoogleTranslator
+from googletrans import Translator
 import logging
 
 logger = logging.getLogger(__name__)
@@ -6,20 +6,48 @@ logger = logging.getLogger(__name__)
 
 class TranslatorService:
     def __init__(self):
-        self.translator = GoogleTranslator(source='ru', target='en')
+        self.translator = Translator()
+    
+    async def translate_to_en(self, text: str) -> str:
+        try:
+            if not text or not text.strip():
+                return text
+            
+            text = text.strip()
+            
+            result = self.translator.translate(text, src='auto', dest='en')
+            
+            detected_lang = result.src
+            translated_text = result.text
+            
+            if detected_lang == 'en':
+                logger.info(f"Text is already in English: '{text[:50]}...'")
+                return text
+            
+            logger.info(f"Detected language: {detected_lang} | Translated: '{text[:50]}...' -> '{translated_text[:50]}...'")
+            return translated_text
+            
+        except Exception as e:
+            logger.error(f"Translation error: {e}", exc_info=True)
+            return text
     
     async def translate_ru_to_en(self, text: str) -> str:
+
+        return await self.translate_to_en(text)
+    
+    def detect_language(self, text: str) -> str:
+
         try:
-            if not text:
-                return text
-            if text.isascii() and all(ord(c) < 128 for c in text):
-                return text
-            translated = self.translator.translate(text)
-            logger.info(f"Translated: '{text}' -> '{translated}'")
-            return translated
+            if not text or not text.strip():
+                return 'unknown'
+            
+            result = self.translator.detect(text)
+            logger.info(f"Detected language: {result.lang} (confidence: {result.confidence})")
+            return result.lang
+            
         except Exception as e:
-            logger.error(f"Translation error: {e}")
-            return text
+            logger.error(f"Language detection error: {e}")
+            return 'unknown'
 
 
 translator_service = TranslatorService()

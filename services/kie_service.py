@@ -90,8 +90,8 @@ class KIEService:
         }
         
         return status_info
-    
-    async def poll_task(self, task_id: str, max_attempts: int = 60) -> dict:
+
+    async def poll_task(self, task_id: str, max_attempts: int = 120) -> dict:
         for attempt in range(max_attempts):
             try:
                 status_info = await asyncio.to_thread(self.get_task_status, task_id)

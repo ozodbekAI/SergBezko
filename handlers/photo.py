@@ -1,11 +1,11 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.fsm.context import FSMContext
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.utils.keyboard import InlineKeyboardBuilder, InlineKeyboardMarkup
 from aiogram.types import InlineKeyboardButton
 from states import PhotoStates
-from keyboards import (get_photo_menu, get_scene_groups, get_scenes_in_group,
-                       get_pose_groups, get_poses_in_group, get_confirmation_keyboard, 
+from keyboards import (get_back_button_photo, get_photo_menu, get_scene_groups, get_scenes_in_group,
+                       get_pose_groups, get_poses_in_group, get_confirmation_keyboard_photo, 
                        get_repeat_button, get_back_to_generation, get_generation_menu)
 from database import async_session_maker
 from database.repositories import (UserRepository, PoseElementRepository, 
@@ -16,10 +16,12 @@ from services.translator import translator_service
 from config import settings
 import logging
 
+from utils.photo import get_photo_url_from_message
+
 logger = logging.getLogger(__name__)
 router = Router()
 
-# FIXED: safe_edit_text funksiyasini fayl boshiga ko'chirdim
+
 async def safe_edit_text(callback: CallbackQuery, text: str, reply_markup=None, parse_mode=None):
     """Xavfsiz edit_text: Media bo'lsa delete + answer"""
     if callback.message.text is None:
@@ -36,76 +38,66 @@ async def safe_edit_text(callback: CallbackQuery, text: str, reply_markup=None, 
             await callback.message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
 
 
+def get_back_button(current_step: str):
+    """PHOTO MODULI ICHIDA - local funksiya"""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"photo_back_{current_step}"))
+    return builder.as_markup()
+
+
 @router.callback_query(F.data == "gen_photo")
 async def photo_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.clear()
-    # Navigation stack qo'shish
-    await state.update_data(nav_stack=["gen_photo"])  # FIXED: "main_generation" o'rniga "gen_photo"
     await safe_edit_text(callback, "📸 Фото\n\nВыберите режим обработки фото:", reply_markup=get_photo_menu())
 
 
 @router.callback_query(F.data == "photo_scene")
 async def photo_scene_change(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    data = await state.get_data()
-    nav_stack = data.get("nav_stack", [])
-    nav_stack.append("photo_scene")
-    
     await state.set_state(PhotoStates.waiting_for_photo)
-    await state.update_data(mode="scene_change", nav_stack=nav_stack)
-    await safe_edit_text(callback, "📸 Отправьте ОДНО фото для смены сцены.", reply_markup=get_back_button(nav_stack[-1]))
+    await state.update_data(mode="scene_change")
+    await safe_edit_text(callback, "📸 Отправьте ОДНО фото для смены сцены.", reply_markup=get_back_button("photo_scene"))
 
 
 @router.callback_query(F.data == "photo_pose")
 async def photo_pose_change(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    data = await state.get_data()
-    nav_stack = data.get("nav_stack", [])
-    nav_stack.append("photo_pose")
-    
     await state.set_state(PhotoStates.waiting_for_photo)
-    await state.update_data(mode="pose_change", nav_stack=nav_stack)
-    await safe_edit_text(callback, "📸 Отправьте ОДНО фото для смены позы.", reply_markup=get_back_button(nav_stack[-1]))
+    await state.update_data(mode="pose_change")
+    await safe_edit_text(callback, "📸 Отправьте ОДНО фото для смены позы.", reply_markup=get_back_button("photo_pose"))
 
 
 @router.callback_query(F.data == "photo_custom")
 async def photo_custom_scenario(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    data = await state.get_data()
-    nav_stack = data.get("nav_stack", [])
-    nav_stack.append("photo_custom")
-    
     await state.set_state(PhotoStates.waiting_for_photo)
-    await state.update_data(mode="custom", nav_stack=nav_stack)
-    await safe_edit_text(callback, "📸 Отправьте ОДНО фото для обработки.", reply_markup=get_back_button(nav_stack[-1]))
+    await state.update_data(mode="custom")
+    await safe_edit_text(callback, "📸 Отправьте ОДНО фото для обработки.", reply_markup=get_back_button("photo_custom"))
 
 
-def get_back_button(current_step: str):
-    """Navigatsiya stack bo'yicha back button yaratish – FIXED: InlineKeyboardBuilder ishlatildi"""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"back_{current_step}"))
-    return builder.as_markup()
-
-
-@router.message(PhotoStates.waiting_for_photo, F.photo)
+@router.message(PhotoStates.waiting_for_photo, F.photo | F.document)
 async def photo_received(message: Message, state: FSMContext):
     if message.media_group_id:
-        data = await state.get_data()
-        nav_stack = data.get("nav_stack", [])
         await message.answer("❌ Пожалуйста, отправьте только ОДНО фото (не альбом).", 
-                           reply_markup=get_back_button(nav_stack[-1] if nav_stack else "gen_photo"))
+                           reply_markup=get_back_button("gen_photo"))
         return
     
-    photo = message.photo[-1]
-    file = await message.bot.get_file(photo.file_id)
-    photo_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file.file_path}"
+    try:
+        photo_url = await get_photo_url_from_message(message)
+    except ValueError as ve:
+        await message.answer(str(ve), reply_markup=get_back_button("gen_photo"))
+        return
+    except Exception as e:
+        logger.error(f"Photo processing error: {e}", exc_info=True)
+        await message.answer("❌ Ошибка при обработке фото. Попробуйте другое фото.", 
+                           reply_markup=get_back_button("gen_photo"))
+        return
+
     data = await state.get_data()
     mode = data["mode"]
-    nav_stack = data.get("nav_stack", [])
-    nav_stack.append("photo_received")  # FIXED: Saqlanadi
     
-    await state.update_data(photo_url=photo_url, nav_stack=nav_stack)
+    await state.update_data(photo_url=photo_url)
     
     if mode == "scene_change":
         async with async_session_maker() as session:
@@ -121,11 +113,15 @@ async def photo_received(message: Message, state: FSMContext):
                 groups[group].append(scene_id)
         
         groups_list = [{"id": gid, "name": gid.title()} for gid in groups.keys()]
-        # FIXED: Stack'ga "selecting_group" qo'shish
-        nav_stack.append("selecting_group")
-        await state.update_data(nav_stack=nav_stack)
-        await message.answer("Выберите группу сцен:", reply_markup=get_scene_groups(groups_list))
         await state.set_state(PhotoStates.selecting_group)
+        
+        # FIXED: back button with photo_received
+        builder = InlineKeyboardBuilder()
+        for group in groups_list:
+            builder.row(InlineKeyboardButton(text=group["name"], callback_data=f"scene_group_{group['id']}"))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_back_photo_received"))
+        
+        await message.answer("Выберите группу сцен:", reply_markup=builder.as_markup())
         
     elif mode == "pose_change":
         async with async_session_maker() as session:
@@ -141,73 +137,90 @@ async def photo_received(message: Message, state: FSMContext):
                 groups[group].append(pose_id)
         
         groups_list = [{"id": gid, "name": gid.title()} for gid in groups.keys()]
-        nav_stack.append("selecting_group")
-        await state.update_data(nav_stack=nav_stack)
-        await message.answer("Выберите группу поз:", reply_markup=get_pose_groups(groups_list))
         await state.set_state(PhotoStates.selecting_group)
         
+        # FIXED: back button with photo_received
+        builder = InlineKeyboardBuilder()
+        for group in groups_list:
+            builder.row(InlineKeyboardButton(
+                text=group["name"], 
+                callback_data=f"pose_group_{group['id']}"
+            ))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_back_photo_received"))
+        
+        await message.answer("Выберите группу поз:", reply_markup=builder.as_markup())
+        
     elif mode == "custom":
-        nav_stack.append("entering_custom_prompt")
-        await state.update_data(nav_stack=nav_stack)
         await message.answer("✏️ Введите свой промпт на русском или английском:", reply_markup=get_back_button("photo_received"))
         await state.set_state(PhotoStates.entering_custom_prompt)
 
 
-@router.callback_query(F.data.startswith("back_"))
-async def back_navigation(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data.startswith("photo_back_"))
+async def back_navigation_photo(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    back_data = callback.data.replace("back_", "")
-    data = await state.get_data()
-    nav_stack = data.get("nav_stack", [])
+    back_data = callback.data.replace("photo_back_", "")
     
-    if back_data == "back_to_generation":
+    if back_data == "gen_photo":
         await state.clear()
-        await safe_edit_text(callback, "Выберите тип генерации:", reply_markup=get_generation_menu())
+        await safe_edit_text(callback,
+            "Выберите тип генерации:",
+            reply_markup=get_generation_menu()
+        )
         return
     
-
-    if nav_stack and nav_stack[-1] == back_data:
-        nav_stack.pop()
-        await state.update_data(nav_stack=nav_stack)
-    
-    if not nav_stack:
+    if back_data in ["photo_scene", "photo_pose", "photo_custom"]:
         await state.clear()
-        await safe_edit_text(callback, "Выберите тип генерации:", reply_markup=get_generation_menu())
+        await safe_edit_text(callback,
+            "📸 Фото\n\nВыберите режим обработки фото:",
+            reply_markup=get_photo_menu()
+        )
         return
     
-    current_state = await state.get_state()
-    mode = data.get("mode")
-    prev_step = nav_stack[-1] if nav_stack else None
-    
-    if prev_step == "gen_photo":
-        await safe_edit_text(callback, "📸 Фото\n\nВыберите режим обработки фото:", reply_markup=get_photo_menu())
-        return
-    
-    if prev_step in ["photo_scene", "photo_pose", "photo_custom"]:
-        await state.set_state(PhotoStates.waiting_for_photo)
-        if mode == "scene_change":
-            await safe_edit_text(callback, "📸 Отправьте ОДНО фото для смены сцены.", reply_markup=get_back_button(prev_step))
-        elif mode == "pose_change":
-            await safe_edit_text(callback, "📸 Отправьте ОДНО фото для смены позы.", reply_markup=get_back_button(prev_step))
-        elif mode == "custom":
-            await safe_edit_text(callback, "📸 Отправьте ОДНО фото для обработки.", reply_markup=get_back_button(prev_step))
-        return
-    
-    if prev_step == "photo_received":
-        await safe_edit_text(callback, "📸 Фото\n\nВыберите режим обработки фото:", reply_markup=get_photo_menu())
-        return
-    
-    if prev_step == "selecting_group" and mode in ["scene_change", "pose_change"]:
-        await state.set_state(PhotoStates.waiting_for_photo)
-        if mode == "scene_change":
-            await safe_edit_text(callback, "📸 Отправьте ОДНО фото для смены сцены.", reply_markup=get_back_button("photo_scene"))
-        elif mode == "pose_change":
-            await safe_edit_text(callback, "📸 Отправьте ОДНО фото для смены позы.", reply_markup=get_back_button("photo_pose"))
-        return
-    
-    if prev_step == "selecting_scene" and mode == "scene_change":
+    if back_data == "photo_received":
+        # FIXED: Photo yuborilgandan keyin - photo yuborish holatiga qaytish
         data = await state.get_data()
-        group_id = data.get("selected_group", "")
+        mode = data.get("mode")
+        
+        await state.set_state(PhotoStates.waiting_for_photo)
+        
+        if mode == "scene_change":
+            await safe_edit_text(callback,
+                "📸 Отправьте ОДНО фото для смены сцены.",
+                reply_markup=get_back_button("photo_scene")
+            )
+        elif mode == "pose_change":
+            await safe_edit_text(callback,
+                "📸 Отправьте ОДНО фото для смены позы.",
+                reply_markup=get_back_button("photo_pose")
+            )
+        else:
+            await safe_edit_text(callback,
+                "📸 Отправьте ОДНО фото для обработки.",
+                reply_markup=get_back_button("photo_custom")
+            )
+        return
+    
+    if back_data in ["selecting_group", "selecting_group_scene", "selecting_group_pose", "selecting_scene_groups"]:
+        # Group tanlashdan - photo yuborishga qaytish
+        data = await state.get_data()
+        mode = data.get("mode")
+        
+        await state.set_state(PhotoStates.waiting_for_photo)
+        
+        if mode == "scene_change":
+            await safe_edit_text(callback,
+                "📸 Отправьте ОДНО фото для смены сцены.",
+                reply_markup=get_back_button("photo_scene")
+            )
+        else:  # pose_change
+            await safe_edit_text(callback,
+                "📸 Отправьте ОДНО фото для смены позы.",
+                reply_markup=get_back_button("photo_pose")
+            )
+        return
+    
+    if back_data == "selecting_scene":
+        # Scene tanlashdan - group tanlashga
         async with async_session_maker() as session:
             scene_repo = SceneElementRepository(session)
             all_scenes = await scene_repo.get_all_scenes()
@@ -218,125 +231,126 @@ async def back_navigation(callback: CallbackQuery, state: FSMContext):
                 group = elements[0].group
                 if group not in groups:
                     groups[group] = []
-                groups[group].append(scene_id)
         
         groups_list = [{"id": gid, "name": gid.title()} for gid in groups.keys()]
-        await safe_edit_text(callback, "Выберите группу сцен:", reply_markup=get_scene_groups(groups_list))
+        
         await state.set_state(PhotoStates.selecting_group)
+        
+        builder = InlineKeyboardBuilder()
+        for group in groups_list:
+            builder.row(InlineKeyboardButton(text=group["name"], callback_data=f"scene_group_{group['id']}"))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_back_photo_received"))
+        
+        await safe_edit_text(callback,
+            "Выберите группу сцен:",
+            reply_markup=builder.as_markup()
+        )
         return
     
-    if prev_step == "selecting_plan" and mode == "scene_change":
+    if back_data == "selecting_plan":
+        # Plan tanlashdan - scene tanlashga
         data = await state.get_data()
         group_id = data.get("selected_group", "")
+        
         async with async_session_maker() as session:
             scene_repo = SceneElementRepository(session)
             all_scenes = await scene_repo.get_all_scenes()
         
-        group_scenes = {}
-        for scene_id, elements in all_scenes.items():
-            if elements and elements[0].group == group_id:
-                group_scenes[scene_id] = elements
+        group_scenes = {sid: els for sid, els in all_scenes.items() 
+                       if els and els[0].group == group_id}
         
-        scenes_list = [{"id": sid, "name": sid.replace("_", " ").title()} for sid in group_scenes.keys()]
-        await safe_edit_text(callback, "Выберите сцену:", reply_markup=get_scenes_in_group(scenes_list, group_id))
+        scenes_list = [{"id": sid, "name": sid.replace("_", " ").title()} 
+                      for sid in group_scenes.keys()]
+        
         await state.set_state(PhotoStates.selecting_scene)
+        await safe_edit_text(callback,
+            "Выберите сцену:",
+            reply_markup=get_scenes_in_group(scenes_list, group_id)
+        )
         return
     
-    if prev_step == "selecting_element" and mode == "scene_change":
-        data = await state.get_data()
-        scene_id = data.get("selected_scene", "")
+    if back_data in ["selecting_pose", "selecting_group_pose"]:
+        # Pose tanlashdan - group tanlashga
+        async with async_session_maker() as session:
+            pose_repo = PoseElementRepository(session)
+            all_poses = await pose_repo.get_all_poses()
+        
+        groups = {}
+        for pose_id, elements in all_poses.items():
+            if elements:
+                group = elements[0].group
+                if group not in groups:
+                    groups[group] = []
+        
+        groups_list = [{"id": gid, "name": gid.title()} for gid in groups.keys()]
+        
+        await state.set_state(PhotoStates.selecting_group)
+        
+        # FIXED: back button with photo_received
         builder = InlineKeyboardBuilder()
-        plans = [
-            ("far", "Дальний план"),
-            ("medium", "Средний план"),
-            ("close", "Крупный план"),
-            ("side", "Боковой вид"),
-            ("back", "Вид со спины"),
-            ("motion", "Динамический кадр")
-        ]
-        for plan_id, plan_name in plans:
-            builder.row(InlineKeyboardButton(text=plan_name, callback_data=f"plan_{plan_id}_{scene_id}"))
+        for group in groups_list:
+            builder.row(InlineKeyboardButton(
+                text=group["name"], 
+                callback_data=f"pose_group_{group['id']}"
+            ))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_back_photo_received"))
         
-        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="back_selecting_scene"))
-        
-        text = f"🌆 <b>{scene_id.replace('_', ' ').title()}</b>\n\nВыберите план съёмки:"
-        await safe_edit_text(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
-        await state.set_state(PhotoStates.selecting_plan)
+        await safe_edit_text(callback,
+            "Выберите группу поз:",
+            reply_markup=builder.as_markup()
+        )
         return
     
-    if prev_step == "selecting_pose" and mode == "pose_change":
-        data = await state.get_data()
-        group_id = data.get("selected_group", "")
-        async with async_session_maker() as session:
-            pose_repo = PoseElementRepository(session)
-            all_poses = await pose_repo.get_all_poses()
-        
-        group_poses = {}
-        for pose_id, elements in all_poses.items():
-            if elements and elements[0].group == group_id:
-                group_poses[pose_id] = elements
-        
-        poses_list = [{"id": pid, "name": pid.replace("_", " ").title()} for pid in group_poses.keys()]
-        await safe_edit_text(callback, "Выберите позу:", reply_markup=get_poses_in_group(poses_list, group_id))
-        await state.set_state(PhotoStates.selecting_pose)
-        return
-    
-    if prev_step == "selecting_pose_element" and mode == "pose_change":
-        data = await state.get_data()
-        group_id = data.get("selected_group", "")
-        async with async_session_maker() as session:
-            pose_repo = PoseElementRepository(session)
-            all_poses = await pose_repo.get_all_poses()
-        
-        group_poses = {}
-        for pose_id, elements in all_poses.items():
-            if elements and elements[0].group == group_id:
-                group_poses[pose_id] = elements
-        
-        poses_list = [{"id": pid, "name": pid.replace("_", " ").title()} for pid in group_poses.keys()]
-        await safe_edit_text(callback, "Выберите позу:", reply_markup=get_poses_in_group(poses_list, group_id))
-        await state.set_state(PhotoStates.selecting_pose)
-        return
-    
-    if prev_step == "entering_custom_prompt":
+    if back_data == "entering_custom_prompt":
         await state.set_state(PhotoStates.waiting_for_photo)
-        await safe_edit_text(callback, "📸 Отправьте ОДНО фото для обработки.", reply_markup=get_back_button("photo_custom"))
+        await safe_edit_text(callback,
+            "📸 Отправьте ОДНО фото для обработки.",
+            reply_markup=get_back_button("photo_custom")
+        )
         return
-    
-    await safe_edit_text(callback, "Выберите тип генерации:", reply_markup=get_generation_menu())
-    await state.clear()
 
-@router.callback_query(PhotoStates.selecting_group, F.data.startswith("scene_group_"))  
-async def select_photo_scene_group(callback: CallbackQuery, state: FSMContext):
+
+@router.callback_query(PhotoStates.selecting_group, F.data.startswith("scene_group_"))
+async def select_scene_group(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     group_id = callback.data.replace("scene_group_", "")
-    data = await state.get_data()
-    nav_stack = data.get("nav_stack", [])
-    nav_stack.append("selecting_group_scene")  
     
     async with async_session_maker() as session:
         scene_repo = SceneElementRepository(session)
         all_scenes = await scene_repo.get_all_scenes()
     
-    group_scenes = {}
-    for scene_id, elements in all_scenes.items():
-        if elements and elements[0].group == group_id:
-            group_scenes[scene_id] = elements
+    group_scenes = {sid: els for sid, els in all_scenes.items() 
+                   if els and els[0].group == group_id}
     
-    scenes_list = [{"id": sid, "name": sid.replace("_", " ").title()} for sid in group_scenes.keys()]
+    scenes_list = [{"id": sid, "name": sid.replace("_", " ").title()} 
+                  for sid in group_scenes.keys()]
     
-    await state.update_data(selected_group=group_id, group_scenes=group_scenes, nav_stack=nav_stack)
-    await safe_edit_text(callback, "Выберите сцену:", reply_markup=get_scenes_in_group(scenes_list, group_id))
+    await state.update_data(selected_group=group_id)
     await state.set_state(PhotoStates.selecting_scene)
+    
+    keyboard = []
+    for scene in scenes_list:
+        keyboard.append([InlineKeyboardButton(
+            text=scene["name"], 
+            callback_data=f"scene_{scene['id']}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton(
+        text="✅ Все сцены группы", 
+        callback_data=f"scene_all_{group_id}"
+    )])
+    
+    keyboard.append([InlineKeyboardButton(
+        text="◀️ Назад", 
+        callback_data="photo_back_selecting_scene"
+    )])
+    
+    await safe_edit_text(callback, "Выберите сцену:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
 
 
 @router.callback_query(PhotoStates.selecting_scene, F.data.startswith("scene_"))
 async def select_photo_scene(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    if callback.data.startswith("back_"):
-        await back_navigation(callback, state)
-        return
-    
     scene_id = callback.data.replace("scene_", "")
     
     async with async_session_maker() as session:
@@ -347,19 +361,13 @@ async def select_photo_scene(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Нет элементов для этой сцены", show_alert=True)
         return
     
-    data = await state.get_data()
-    nav_stack = data.get("nav_stack", [])
-    nav_stack.append("selecting_plan")  
-    
     await state.update_data(
         selected_scene=scene_id,
         scene_elements=elements,
         selected_element_ids=[],
-        selected_plan=None,
-        nav_stack=nav_stack 
+        selected_plan=None
     )
     
-    # Plans keyboard (o'zgarmasdan)
     builder = InlineKeyboardBuilder()
     plans = [
         ("far", "Дальний план"),
@@ -372,7 +380,7 @@ async def select_photo_scene(callback: CallbackQuery, state: FSMContext):
     for plan_id, plan_name in plans:
         builder.row(InlineKeyboardButton(text=plan_name, callback_data=f"plan_{plan_id}_{scene_id}"))
     
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="back_selecting_scene"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_back_selecting_scene"))
     
     text = f"🌆 <b>{scene_id.replace('_', ' ').title()}</b>\n\nВыберите план съёмки:"
     await safe_edit_text(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -382,10 +390,7 @@ async def select_photo_scene(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(PhotoStates.selecting_plan, F.data.startswith("plan_"))
 async def select_scene_plan(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    if callback.data.startswith("back_"):
-        await back_navigation(callback, state)
-        return
-    
+
     parts = callback.data.split("_", 2)
     plan_id = parts[1]
     scene_id = parts[2]
@@ -402,10 +407,6 @@ async def select_scene_plan(callback: CallbackQuery, state: FSMContext):
         prompt = getattr(elem, prompt_field, elem.prompt_medium if hasattr(elem, 'prompt_medium') else "")
         text += f"• {elem.name} ({elem.element_type}) - <code>{prompt[:50]}...</code>\n"
     
-
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    from aiogram.types import InlineKeyboardButton
-    
     builder = InlineKeyboardBuilder()
     for elem in elements:
         builder.row(InlineKeyboardButton(
@@ -414,7 +415,7 @@ async def select_scene_plan(callback: CallbackQuery, state: FSMContext):
         ))
     
     builder.row(InlineKeyboardButton(text="✅ Продолжить", callback_data=f"scene_elem_done_{plan_id}"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="back_selecting_scene"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_back_selecting_plan"))
     
     await safe_edit_text(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
     await state.set_state(PhotoStates.selecting_element)
@@ -445,7 +446,7 @@ async def toggle_scene_element(callback: CallbackQuery, state: FSMContext):
                 await state.clear()
                 return
         
-        await safe_edit_text(callback, f"Выбрано элементов: {len(selected_ids)}\nБудет списано {cost} кредитов.\n\nПродолжить?", reply_markup=get_confirmation_keyboard(cost))
+        await safe_edit_text(callback, f"Выбрано элементов: {len(selected_ids)}\nБудет списано {cost} кредитов.\n\nПродолжить?", reply_markup=get_confirmation_keyboard_photo(cost, "selecting_element"))
         await state.set_state(PhotoStates.confirming)
         return
     
@@ -463,7 +464,6 @@ async def toggle_scene_element(callback: CallbackQuery, state: FSMContext):
     await state.update_data(selected_element_ids=selected_ids)
 
     elements = data["scene_elements"]
-    scene_id = data["selected_scene"]
     
     builder = InlineKeyboardBuilder()
     for elem in elements:
@@ -474,7 +474,7 @@ async def toggle_scene_element(callback: CallbackQuery, state: FSMContext):
         ))
     
     builder.row(InlineKeyboardButton(text="✅ Продолжить", callback_data=f"scene_elem_done_{plan_id or ''}"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="back_selecting_plan"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_back_selecting_plan"))
     
     try:
         await callback.message.edit_reply_markup(reply_markup=builder.as_markup())
@@ -486,8 +486,6 @@ async def toggle_scene_element(callback: CallbackQuery, state: FSMContext):
 async def select_photo_pose_group(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     group_id = callback.data.replace("pose_group_", "")
-    data = await state.get_data()
-    nav_stack = data.get("nav_stack", [])
     
     async with async_session_maker() as session:
         pose_repo = PoseElementRepository(session)
@@ -500,19 +498,33 @@ async def select_photo_pose_group(callback: CallbackQuery, state: FSMContext):
     
     poses_list = [{"id": pid, "name": pid.replace("_", " ").title()} for pid in group_poses.keys()]
     
-    nav_stack.append("selecting_group_pose")
-    await state.update_data(selected_group=group_id, group_poses=group_poses, nav_stack=nav_stack)
-    await safe_edit_text(callback, "Выберите позу:", reply_markup=get_poses_in_group(poses_list, group_id))
+    await state.update_data(selected_group=group_id, group_poses=group_poses)
     await state.set_state(PhotoStates.selecting_pose)
+    
+    # FIXED: back button
+    builder = InlineKeyboardBuilder()
+    for pose in poses_list:
+        builder.row(InlineKeyboardButton(
+            text=pose["name"],
+            callback_data=f"pose_{pose['id']}"
+        ))
+    
+    builder.row(InlineKeyboardButton(
+        text="✅ Все позы группы", 
+        callback_data=f"pose_all_{group_id}"
+    ))
+    
+    builder.row(InlineKeyboardButton(
+        text="◀️ Назад", 
+        callback_data="photo_back_selecting_group_pose"
+    ))
+    
+    await safe_edit_text(callback, "Выберите позу:", reply_markup=builder.as_markup())
 
 
 @router.callback_query(PhotoStates.selecting_pose, F.data.startswith("pose_"))
 async def select_photo_pose(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    if callback.data.startswith("back_"):
-        await back_navigation(callback, state)
-        return
-    
     pose_id = callback.data.replace("pose_", "")
     
     async with async_session_maker() as session:
@@ -533,9 +545,6 @@ async def select_photo_pose(callback: CallbackQuery, state: FSMContext):
     for elem in elements:
         text += f"• {elem.name} ({elem.element_type}) - <code>{elem.prompt[:50]}...</code>\n"
     
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    from aiogram.types import InlineKeyboardButton
-    
     builder = InlineKeyboardBuilder()
     for elem in elements:
         builder.row(InlineKeyboardButton(
@@ -544,7 +553,7 @@ async def select_photo_pose(callback: CallbackQuery, state: FSMContext):
         ))
     
     builder.row(InlineKeyboardButton(text="✅ Продолжить", callback_data="pose_elem_done"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="back_selecting_group_pose"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_back_selecting_group_pose"))
     
     await safe_edit_text(callback, text, reply_markup=builder.as_markup(), parse_mode="HTML")
     await state.set_state(PhotoStates.selecting_pose_element)
@@ -573,7 +582,7 @@ async def toggle_pose_element(callback: CallbackQuery, state: FSMContext):
                 await state.clear()
                 return
         
-        await safe_edit_text(callback, f"Выбрано элементов: {len(selected_ids)}\nБудет списано {cost} кредитов.\n\nПродолжить?", reply_markup=get_confirmation_keyboard(cost))
+        await safe_edit_text(callback, f"Выбрано элементов: {len(selected_ids)}\nБудет списано {cost} кредитов.\n\nПродолжить?", reply_markup=get_confirmation_keyboard_photo(cost, "selecting_pose_element"))
         await state.set_state(PhotoStates.confirming)
         return
     
@@ -588,7 +597,6 @@ async def toggle_pose_element(callback: CallbackQuery, state: FSMContext):
     
     await state.update_data(selected_element_ids=selected_ids)
     
-    pose_id = data["selected_pose"]
     elements = data["pose_elements"]
     
     builder = InlineKeyboardBuilder()
@@ -600,7 +608,7 @@ async def toggle_pose_element(callback: CallbackQuery, state: FSMContext):
         ))
     
     builder.row(InlineKeyboardButton(text="✅ Продолжить", callback_data="pose_elem_done"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="back_selecting_pose"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_back_selecting_pose"))
     
     try:
         await callback.message.edit_reply_markup(reply_markup=builder.as_markup())
@@ -628,7 +636,7 @@ async def photo_custom_prompt_received(message: Message, state: FSMContext):
     
     await message.answer(
         f"Ваш промпт: {translated_prompt}\n\nБудет списано {cost} кредит.\n\nПродолжить?",
-        reply_markup=get_confirmation_keyboard(cost)
+        reply_markup=get_confirmation_keyboard_photo(cost, "entering_custom_prompt")
     )
     await state.set_state(PhotoStates.confirming)
 
@@ -641,6 +649,8 @@ async def confirm_photo_generation(callback: CallbackQuery, state: FSMContext):
     mode = data["mode"]
     cost = data["cost"]
     generation_type = data.get("generation_type")
+
+    
     
     async with async_session_maker() as session:
         user_repo = UserRepository(session)
@@ -712,5 +722,15 @@ async def confirm_photo_generation(callback: CallbackQuery, state: FSMContext):
         )
     
     await state.clear()
-
-
+    await state.update_data(last_generation={
+        "type": "photo",
+        "photo_url": photo_url,
+        "mode": mode,
+        "cost": cost,
+        "generation_type": generation_type,
+        "selected_element_ids": data.get("selected_element_ids", []),
+        "selected_scene": data.get("selected_scene"),
+        "selected_plan": data.get("selected_plan"),
+        "selected_pose": data.get("selected_pose"),
+        "prompt": data.get("prompt")
+    })

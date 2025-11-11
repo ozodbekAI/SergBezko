@@ -104,6 +104,57 @@ class UserRepository:
     async def check_balance(self, telegram_id: int, required: int) -> bool:
         user = await self.get_user_by_telegram_id(telegram_id)
         return user and user.balance >= required
+    
+    async def get_banned_count(self) -> int:
+        """Bloklangan userlar soni"""
+        result = await self.session.execute(
+            select(func.count(User.id)).where(User.is_banned == True)
+        )
+        return result.scalar()
+    
+    async def get_banned_users(self, limit: int = 20, offset: int = 0) -> List[User]:
+        """Bloklangan userlar ro'yxati"""
+        result = await self.session.execute(
+            select(User)
+            .where(User.is_banned == True)
+            .order_by(User.last_activity.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all())
+    
+    async def get_all_users(self, limit: int = 20, offset: int = 0) -> List[User]:
+        """Barcha userlar ro'yxati"""
+        result = await self.session.execute(
+            select(User)
+            .order_by(User.last_activity.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all())
+    
+    async def search_users(self, query: str) -> List[User]:
+        """Username, telegram_id yoki ism bo'yicha qidirish"""
+        query = query.strip()
+        
+        # Agar raqam bo'lsa, ID bo'yicha qidirish
+        if query.isdigit():
+            telegram_id = int(query)
+            result = await self.session.execute(
+                select(User).where(User.telegram_id == telegram_id)
+            )
+            user = result.scalar_one_or_none()
+            return [user] if user else []
+        
+        # Aks holda username yoki ism bo'yicha qidirish
+        result = await self.session.execute(
+            select(User).where(
+                (User.username.ilike(f"%{query}%")) |
+                (User.first_name.ilike(f"%{query}%")) |
+                (User.last_name.ilike(f"%{query}%"))
+            ).limit(20)
+        )
+        return list(result.scalars().all())
 
 
 class TaskRepository:
@@ -258,6 +309,7 @@ class StateRepository:
         )
         await self.session.commit()
 
+
 class BotMessageRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -374,7 +426,7 @@ class SceneElementRepository:
     async def add_element(self, scene_id: str, element_type: str, name: str,
                           prompt_far: str, prompt_medium: str, prompt_close: str,
                           group: str, prompt_side: str = "", prompt_back: str = "", prompt_motion: str = "",
-                          order_index: int = 0) -> SceneElement:  # YANGI: parametrlar qo'shildi
+                          order_index: int = 0) -> SceneElement:
         elem = SceneElement(
             scene_id=scene_id,
             element_type=element_type,
@@ -400,7 +452,6 @@ class SceneElementRepository:
         await self.session.commit()
 
 
-# YANGI: Admin loglar uchun repository
 class AdminLogRepository:
     def __init__(self, session: AsyncSession):
         self.session = session

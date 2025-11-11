@@ -36,22 +36,19 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class AdminMessageStates(StatesGroup):
-    selecting_message = State()
     entering_text = State()
     uploading_media = State()
 
 
 class AdminPoseStates(StatesGroup):
-    """Pose elementlarini boshqarish"""
     selecting_group = State()
     entering_pose_id = State()
-    selecting_element_type = State()  
+    selecting_element_type = State()
     entering_element_name = State()
     entering_element_prompt = State()
 
 
 class AdminSceneStates(StatesGroup):
-    """Scene elementlarini boshqarish"""
     selecting_group = State()
     entering_scene_id = State()
     selecting_element_type = State()
@@ -62,3 +59,10 @@ class AdminSceneStates(StatesGroup):
     entering_prompt_side = State()
     entering_prompt_back = State()
     entering_prompt_motion = State()
+
+
+# YANGI: User management states
+class AdminUserStates(StatesGroup):
+    searching_user = State()
+    viewing_user = State()
+    adding_credits = State()

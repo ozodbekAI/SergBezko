@@ -1,15 +1,85 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from typing import List, Dict
+from typing import List
 
 
 def get_admin_main_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="👥 Управление пользователями", callback_data="admin_users"))
     builder.row(InlineKeyboardButton(text="📝 Изменить сообщения", callback_data="admin_messages"))
     builder.row(InlineKeyboardButton(text="🤸 Управление позами", callback_data="admin_poses"))
     builder.row(InlineKeyboardButton(text="🌆 Управление сценами", callback_data="admin_scenes"))
     builder.row(InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"))  
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main"))
+    return builder.as_markup()
+
+
+def get_user_management_menu() -> InlineKeyboardMarkup:
+    """User boshqaruv asosiy menyusi"""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔍 Поиск пользователя", callback_data="user_search"))
+    builder.row(InlineKeyboardButton(text="🚫 Заблокированные пользователи", callback_data="user_banned_list"))
+    builder.row(InlineKeyboardButton(text="👥 Все пользователи (последние 20)", callback_data="user_all_list"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_back"))
+    return builder.as_markup()
+
+
+def get_user_detail_keyboard(user_id: int, is_banned: bool) -> InlineKeyboardMarkup:
+    """Bitta user uchun batafsil klaviatura"""
+    builder = InlineKeyboardBuilder()
+    
+    if is_banned:
+        builder.row(InlineKeyboardButton(text="✅ Разблокировать", callback_data=f"user_unban_{user_id}"))
+    else:
+        builder.row(InlineKeyboardButton(text="🚫 Заблокировать", callback_data=f"user_ban_{user_id}"))
+    
+    builder.row(InlineKeyboardButton(text="💰 Изменить баланс", callback_data=f"user_balance_{user_id}"))
+    builder.row(InlineKeyboardButton(text="📊 Статистика задач", callback_data=f"user_tasks_{user_id}"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад к поиску", callback_data="admin_users"))
+    return builder.as_markup()
+
+
+def get_balance_action_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """Balans o'zgartirish klaviaturasi"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="➕ Добавить", callback_data=f"balance_add_{user_id}"),
+        InlineKeyboardButton(text="➖ Убавить", callback_data=f"balance_subtract_{user_id}")
+    )
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"user_view_{user_id}"))
+    return builder.as_markup()
+
+
+def get_cancel_keyboard(back_to: str = "admin_users") -> InlineKeyboardMarkup:
+    """Bekor qilish klaviaturasi"""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data=back_to))
+    return builder.as_markup()
+
+
+def get_user_list_keyboard(users: List, offset: int = 0) -> InlineKeyboardMarkup:
+    """Userlar ro'yxati klaviaturasi"""
+    builder = InlineKeyboardBuilder()
+    
+    for user in users:
+        status = "🚫" if user.is_banned else "✅"
+        username = f"@{user.username}" if user.username else f"ID:{user.telegram_id}"
+        builder.row(InlineKeyboardButton(
+            text=f"{status} {username} ({user.balance} кр.)",
+            callback_data=f"user_view_{user.telegram_id}"
+        ))
+    
+    # Pagination (agar kerak bo'lsa)
+    nav_buttons = []
+    if offset > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"user_list_{offset-20}"))
+    if len(users) == 20:
+        nav_buttons.append(InlineKeyboardButton(text="➡️ Вперед", callback_data=f"user_list_{offset+20}"))
+    
+    if nav_buttons:
+        builder.row(*nav_buttons)
+    
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_users"))
     return builder.as_markup()
 
 
@@ -89,31 +159,4 @@ def get_confirm_keyboard() -> InlineKeyboardMarkup:
 def get_admin_back_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="◀️ В админ панель", callback_data="admin_back"))
-    return builder.as_markup()
-
-def get_pose_elements_keyboard(pose_id: str, elements: List) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    
-    for elem in elements:
-        builder.row(InlineKeyboardButton(
-            text=f"{'✅' if elem else '⬜'} {elem.name}",
-            callback_data=f"pose_elem_{elem.id}"
-        ))
-    
-    builder.row(InlineKeyboardButton(text="✅ Продолжить", callback_data="pose_elem_done"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_pose"))
-    return builder.as_markup()
-
-
-def get_scene_elements_keyboard(scene_id: str, elements: List) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    
-    for elem in elements:
-        builder.row(InlineKeyboardButton(
-            text=f"{'✅' if elem else '⬜'} {elem.name}",
-            callback_data=f"scene_elem_{elem.id}"
-        ))
-    
-    builder.row(InlineKeyboardButton(text="✅ Продолжить", callback_data="scene_elem_done"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="photo_scene"))
     return builder.as_markup()
