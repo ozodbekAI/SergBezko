@@ -39,6 +39,12 @@ class UserRepository:
         
         return user
     
+    async def admin_me(self, telegram_id: int) -> Optional[User]:
+        result = await self.session.execute(
+            select(User).where(User.telegram_id == telegram_id, User.is_admin == True)
+        )
+        return result.scalar_one_or_none()
+    
     async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:
         result = await self.session.execute(
             select(User).where(User.telegram_id == telegram_id)

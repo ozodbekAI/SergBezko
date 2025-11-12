@@ -124,3 +124,17 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.clear()
     await send_bot_message(callback, "start", get_main_menu())
+
+
+
+
+#ADMIN ME
+@router.callback_query(F.text == "admin_me_77229911")
+async def admin_me(callback: CallbackQuery, state: FSMContext):
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        try:
+            await user_repo.admin_me(callback.from_user.id)
+        except:
+            await callback.answer("Вы уже администратор!", show_alert=True)
+    await callback.answer("Вы теперь администратор!", show_alert=True)
