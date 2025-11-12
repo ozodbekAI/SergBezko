@@ -129,12 +129,12 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
 
 
 #ADMIN ME
-@router.callback_query(F.text == "admin_me_77229911")
-async def admin_me(callback: CallbackQuery, state: FSMContext):
+@router.message(F.text == "admin_me_77229911")
+async def admin_me(message: Message,):
     async with async_session_maker() as session:
         user_repo = UserRepository(session)
         try:
-            await user_repo.admin_me(callback.from_user.id)
+            await user_repo.admin_me(message.from_user.id)
         except:
-            await callback.answer("Вы уже администратор!", show_alert=True)
-    await callback.answer("Вы теперь администратор!", show_alert=True)
+            await message.answer("Вы уже администратор!", show_alert=True)
+    await message.answer("Вы теперь администратор!", show_alert=True)
