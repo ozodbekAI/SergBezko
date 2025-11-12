@@ -1,9 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func
 from sqlalchemy.orm import selectinload
-from database.models import (ScenePlanPrompt, User, Task, Payment, UserState, TaskStatus, TaskType,
+from database.models import (ModelCategory, ModelItem, ModelSubcategory, User, Task, Payment, UserState, TaskStatus, TaskType,
                              BotMessage, PoseGroup, PoseSubgroup, PosePrompt,
-                             SceneGroup, AdminLog, ModelType)
+                             SceneCategory, SceneSubcategory, SceneItem,
+                             AdminLog)
 from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 
@@ -173,21 +174,88 @@ class TaskRepository:
         return result.scalar()
 
 
+from datetime import datetime
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
+
 class PaymentRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
-    
+
+    async def create_payment(
+        self,
+        user_id: int,
+        payment_id: str,
+        amount: float,
+        credits: int,
+        status: str = "pending",
+    ) -> Payment:
+        payment = Payment(
+            user_id=user_id,
+            payment_id=payment_id,
+            amount=amount,
+            credits=credits,
+            status=status,
+            created_at=datetime.utcnow(),
+            completed_at=None,
+        )
+        self.session.add(payment)
+        try:
+            await self.session.commit()
+            await self.session.refresh(payment)
+            return payment
+        except IntegrityError:
+            await self.session.rollback()
+            # payment_id unikal bo'lgani uchun mavjud yozuvni qaytaramiz
+            existing = await self.get_payment_by_payment_id(payment_id)
+            if existing:
+                return existing
+            # kutilmagan holat
+            raise
+
+    async def get_payment_by_payment_id(self, payment_id: str) -> Payment | None:
+        result = await self.session.execute(
+            select(Payment).where(Payment.payment_id == payment_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def update_payment_status(self, payment_id: str, status: str) -> Payment | None:
+        payment = await self.get_payment_by_payment_id(payment_id)
+        if not payment:
+            return None
+
+        payment.status = status
+        terminal_statuses = {"succeeded", "cancelled", "canceled", "failed", "refunded"}
+        if status in terminal_statuses and payment.completed_at is None:
+            payment.completed_at = datetime.utcnow()
+
+        await self.session.commit()
+        await self.session.refresh(payment)
+        return payment
+
+    async def list_user_payments(self, user_id: int, limit: int = 20, offset: int = 0) -> list[Payment]:
+        result = await self.session.execute(
+            select(Payment)
+            .where(Payment.user_id == user_id)
+            .order_by(Payment.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all())
+
     async def get_total_payments(self) -> int:
         result = await self.session.execute(
             select(func.count(Payment.id)).where(Payment.status == "succeeded")
         )
         return result.scalar()
-    
+
     async def get_total_credits_sold(self) -> int:
         result = await self.session.execute(
             select(func.sum(Payment.credits)).where(Payment.status == "succeeded")
         )
         return result.scalar() or 0
+
 
 
 class BotMessageRepository:
@@ -223,55 +291,143 @@ class BotMessageRepository:
         return msg
 
 
-# ===== MODEL TYPE REPOSITORY =====
-
-class ModelTypeRepository:
+class ModelCategoryRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
-    
-    async def get_all(self) -> List[ModelType]:
+
+    async def get_all_categories(self) -> List[ModelCategory]:
         result = await self.session.execute(
-            select(ModelType)
-            .where(ModelType.is_active == True)
-            .order_by(ModelType.order_index)
+            select(ModelCategory)
+            .where(ModelCategory.is_active == True)
+            .order_by(ModelCategory.order_index)
         )
         return list(result.scalars().all())
-    
-    async def get_by_id(self, model_type_id: int) -> Optional[ModelType]:
+
+    async def get_category(self, category_id: int) -> Optional[ModelCategory]:
         result = await self.session.execute(
-            select(ModelType).where(ModelType.id == model_type_id)
+            select(ModelCategory).where(ModelCategory.id == category_id)
         )
         return result.scalar_one_or_none()
-    
-    async def add(self, name: str, prompt: str, order_index: int = 0) -> ModelType:
-        model_type = ModelType(
+
+    async def add_category(self, name: str, order_index: int = 0) -> ModelCategory:
+        category = ModelCategory(name=name, order_index=order_index)
+        self.session.add(category)
+        await self.session.commit()
+        await self.session.refresh(category)
+        return category
+
+    async def delete_category(self, category_id: int):
+        await self.session.execute(
+            delete(ModelCategory).where(ModelCategory.id == category_id)
+        )
+        await self.session.commit()
+
+    async def get_subcategories_by_category(self, category_id: int) -> List[ModelSubcategory]:
+        result = await self.session.execute(
+            select(ModelSubcategory)
+            .where(ModelSubcategory.category_id == category_id)
+            .where(ModelSubcategory.is_active == True)
+            .order_by(ModelSubcategory.order_index)
+        )
+        return list(result.scalars().all())
+
+    async def get_subcategory(self, subcategory_id: int) -> Optional[ModelSubcategory]:
+        result = await self.session.execute(
+            select(ModelSubcategory).where(ModelSubcategory.id == subcategory_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def add_subcategory(self, category_id: int, name: str, order_index: int = 0) -> ModelSubcategory:
+        subcategory = ModelSubcategory(
+            category_id=category_id,
+            name=name,
+            order_index=order_index
+        )
+        self.session.add(subcategory)
+        await self.session.commit()
+        await self.session.refresh(subcategory)
+        return subcategory
+
+    async def delete_subcategory(self, subcategory_id: int):
+        await self.session.execute(
+            delete(ModelSubcategory).where(ModelSubcategory.id == subcategory_id)
+        )
+        await self.session.commit()
+
+    async def get_items_by_subcategory(self, subcategory_id: int) -> List[ModelItem]:
+        result = await self.session.execute(
+            select(ModelItem)
+            .where(ModelItem.subcategory_id == subcategory_id)
+            .where(ModelItem.is_active == True)
+            .order_by(ModelItem.order_index)
+        )
+        return list(result.scalars().all())
+
+    async def get_item(self, item_id: int) -> Optional[ModelItem]:
+        result = await self.session.execute(
+            select(ModelItem).where(ModelItem.id == item_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def add_item(self, subcategory_id: int, name: str, prompt: str, order_index: int = 0) -> ModelItem:
+        item = ModelItem(
+            subcategory_id=subcategory_id,
             name=name,
             prompt=prompt,
             order_index=order_index
         )
-        self.session.add(model_type)
+        self.session.add(item)
         await self.session.commit()
-        await self.session.refresh(model_type)
-        return model_type
-    
-    async def update(self, model_type_id: int, name: str, prompt: str) -> Optional[ModelType]:
+        await self.session.refresh(item)
+        return item
+
+    async def update_item(self, item_id: int, name: str, prompt: str) -> Optional[ModelItem]:
         result = await self.session.execute(
-            select(ModelType).where(ModelType.id == model_type_id)
+            select(ModelItem).where(ModelItem.id == item_id)
         )
-        model_type = result.scalar_one_or_none()
-        if model_type:
-            model_type.name = name
-            model_type.prompt = prompt
+        item = result.scalar_one_or_none()
+        if item:
+            item.name = name
+            item.prompt = prompt
             await self.session.commit()
-            await self.session.refresh(model_type)
-        return model_type
-    
-    async def delete(self, model_type_id: int):
+            await self.session.refresh(item)
+        return item
+
+    async def delete_item(self, item_id: int):
         await self.session.execute(
-            delete(ModelType).where(ModelType.id == model_type_id)
+            delete(ModelItem).where(ModelItem.id == item_id)
         )
         await self.session.commit()
 
+    async def get_full_hierarchy(self) -> Dict:
+        result = await self.session.execute(
+            select(ModelCategory)
+            .options(
+                selectinload(ModelCategory.subcategories).selectinload(ModelSubcategory.items)
+            )
+            .where(ModelCategory.is_active == True)
+            .order_by(ModelCategory.order_index)
+        )
+        categories = result.scalars().all()
+        
+        hierarchy = {}
+        for category in categories:
+            hierarchy[category.id] = {
+                "name": category.name,
+                "subcategories": {}
+            }
+            
+            for subcategory in category.subcategories:
+                if subcategory.is_active:
+                    hierarchy[category.id]["subcategories"][subcategory.id] = {
+                        "name": subcategory.name,
+                        "items": [
+                            {"id": item.id, "name": item.name, "prompt": item.prompt}
+                            for item in subcategory.items if item.is_active
+                        ]
+                    }
+        
+        return hierarchy
 
 
 class PoseRepository:
@@ -412,127 +568,143 @@ class PoseRepository:
 
 
 
-
-class SceneRepository:
+class SceneCategoryRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    # === GROUPS ===
-    async def get_all_groups(self) -> List[SceneGroup]:
+    async def get_all_categories(self) -> List[SceneCategory]:
         result = await self.session.execute(
-            select(SceneGroup)
-            .where(SceneGroup.is_active == True)
-            .order_by(SceneGroup.order_index)
+            select(SceneCategory)
+            .where(SceneCategory.is_active == True)
+            .order_by(SceneCategory.order_index)
         )
         return list(result.scalars().all())
 
-    async def get_group(self, group_id: int) -> Optional[SceneGroup]:
+    async def get_category(self, category_id: int) -> Optional[SceneCategory]:
         result = await self.session.execute(
-            select(SceneGroup).where(SceneGroup.id == group_id)
+            select(SceneCategory).where(SceneCategory.id == category_id)
         )
         return result.scalar_one_or_none()
 
-    async def add_group(self, name: str) -> SceneGroup:
-        group = SceneGroup(name=name)
-        self.session.add(group)
+    async def add_category(self, name: str, order_index: int = 0) -> SceneCategory:
+        category = SceneCategory(name=name, order_index=order_index)
+        self.session.add(category)
         await self.session.commit()
-        await self.session.refresh(group)
-        return group
+        await self.session.refresh(category)
+        return category
 
-    async def delete_group(self, group_id: int):
-        await self.session.execute(delete(SceneGroup).where(SceneGroup.id == group_id))
-        await self.session.commit()
-
-
-    async def add_plan_prompt(self, group_id: int, name: str, prompt: str) -> ScenePlanPrompt:
-        plan = ScenePlanPrompt(group_id=group_id, name=name, prompt=prompt)
-        self.session.add(plan)
-        await self.session.commit()
-        await self.session.refresh(plan)
-        return plan
-
-    async def update_plan_prompt(self, plan_id: int, prompt: str) -> Optional[ScenePlanPrompt]:
-        result = await self.session.execute(
-            select(ScenePlanPrompt).where(ScenePlanPrompt.id == plan_id)
+    async def delete_category(self, category_id: int):
+        await self.session.execute(
+            delete(SceneCategory).where(SceneCategory.id == category_id)
         )
-        plan = result.scalar_one_or_none()
-        if plan:
-            plan.prompt = prompt
+        await self.session.commit()
+
+    async def get_subcategories_by_category(self, category_id: int) -> List[SceneSubcategory]:
+        result = await self.session.execute(
+            select(SceneSubcategory)
+            .where(SceneSubcategory.category_id == category_id)
+            .where(SceneSubcategory.is_active == True)
+            .order_by(SceneSubcategory.order_index)
+        )
+        return list(result.scalars().all())
+
+    async def get_subcategory(self, subcategory_id: int) -> Optional[SceneSubcategory]:
+        result = await self.session.execute(
+            select(SceneSubcategory).where(SceneSubcategory.id == subcategory_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def add_subcategory(self, category_id: int, name: str, order_index: int = 0) -> SceneSubcategory:
+        subcategory = SceneSubcategory(
+            category_id=category_id,
+            name=name,
+            order_index=order_index
+        )
+        self.session.add(subcategory)
+        await self.session.commit()
+        await self.session.refresh(subcategory)
+        return subcategory
+
+    async def delete_subcategory(self, subcategory_id: int):
+        await self.session.execute(
+            delete(SceneSubcategory).where(SceneSubcategory.id == subcategory_id)
+        )
+        await self.session.commit()
+
+    async def get_items_by_subcategory(self, subcategory_id: int) -> List[SceneItem]:
+        result = await self.session.execute(
+            select(SceneItem)
+            .where(SceneItem.subcategory_id == subcategory_id)
+            .where(SceneItem.is_active == True)
+            .order_by(SceneItem.order_index)
+        )
+        return list(result.scalars().all())
+
+    async def get_item(self, item_id: int) -> Optional[SceneItem]:
+        result = await self.session.execute(
+            select(SceneItem).where(SceneItem.id == item_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def add_item(self, subcategory_id: int, name: str, prompt: str, order_index: int = 0) -> SceneItem:
+        item = SceneItem(
+            subcategory_id=subcategory_id,
+            name=name,
+            prompt=prompt,
+            order_index=order_index
+        )
+        self.session.add(item)
+        await self.session.commit()
+        await self.session.refresh(item)
+        return item
+
+    async def update_item(self, item_id: int, name: str, prompt: str) -> Optional[SceneItem]:
+        result = await self.session.execute(
+            select(SceneItem).where(SceneItem.id == item_id)
+        )
+        item = result.scalar_one_or_none()
+        if item:
+            item.name = name
+            item.prompt = prompt
             await self.session.commit()
-            await self.session.refresh(plan)
-        return plan
+            await self.session.refresh(item)
+        return item
 
-    async def delete_plan_prompt(self, plan_id: int):
-        await self.session.execute(delete(ScenePlanPrompt).where(ScenePlanPrompt.id == plan_id))
+    async def delete_item(self, item_id: int):
+        await self.session.execute(
+            delete(SceneItem).where(SceneItem.id == item_id)
+        )
         await self.session.commit()
 
-    async def get_full_hierarchy(self) -> Dict[int, Dict]:
-        groups = await self.get_all_groups()
+    async def get_full_hierarchy(self) -> Dict:
+        result = await self.session.execute(
+            select(SceneCategory)
+            .options(
+                selectinload(SceneCategory.subcategories).selectinload(SceneSubcategory.items)
+            )
+            .where(SceneCategory.is_active == True)
+            .order_by(SceneCategory.order_index)
+        )
+        categories = result.scalars().all()
+        
         hierarchy = {}
-        for group in groups:
-            plans = await self.get_plans_by_group(group.id)
-            hierarchy[group.id] = {
-                "name": group.name,
-                "plans": [{"id": p.id, "name": p.name, "prompt": p.prompt} for p in plans]
+        for category in categories:
+            hierarchy[category.id] = {
+                "name": category.name,
+                "subcategories": {}
             }
+            
+            for subcategory in category.subcategories:
+                if subcategory.is_active:
+                    hierarchy[category.id]["subcategories"][subcategory.id] = {
+                        "name": subcategory.name,
+                        "items": [
+                            {"id": item.id, "name": item.name, "prompt": item.prompt}
+                            for item in subcategory.items if item.is_active
+                        ]
+                    }
+        
         return hierarchy
-    
-    async def get_plans_by_group(self, group_id: int) -> List[ScenePlanPrompt]:
-        """Bir gruppaga tegishli barcha planlarni olish"""
-        result = await self.session.execute(
-            select(ScenePlanPrompt)
-            .where(ScenePlanPrompt.group_id == group_id)
-            .where(ScenePlanPrompt.is_active == True)
-            .order_by(ScenePlanPrompt.order_index)
-        )
-        return list(result.scalars().all())
-
-
-    async def get_all_plans(self) -> List[ScenePlanPrompt]:
-        result = await self.session.execute(
-            select(ScenePlanPrompt)
-            .where(ScenePlanPrompt.is_active == True)
-            .order_by(ScenePlanPrompt.order_index)
-        )
-        all_plans = list(result.scalars().all())
-        
-        seen_names = {}
-        for plan in all_plans:
-            if plan.name not in seen_names:
-                seen_names[plan.name] = plan
-        
-        unique_plans = list(seen_names.values())
-        unique_plans.sort(key=lambda x: x.order_index)
-        
-        return unique_plans
-
-
-    async def get_plan(self, plan_id: int) -> Optional[ScenePlanPrompt]:
-        result = await self.session.execute(
-            select(ScenePlanPrompt).where(ScenePlanPrompt.id == plan_id)
-        )
-        return result.scalar_one_or_none()
-    
-    async def get_plan_prompt(self, plan_id: int) -> Optional[str]:
-        plan = await self.get_plan(plan_id)
-        if plan:
-            return plan.prompt
-        return None
-
-
-    async def get_prompts_by_group_and_plan(self, group_id: int, plan_id: int) -> List[ScenePlanPrompt]:
-        plan = await self.get_plan(plan_id)
-        if not plan:
-            return []
-        
-        result = await self.session.execute(
-            select(ScenePlanPrompt)
-            .where(ScenePlanPrompt.group_id == group_id)
-            .where(ScenePlanPrompt.name == plan.name)
-            .where(ScenePlanPrompt.is_active == True)
-            .order_by(ScenePlanPrompt.order_index)
-        )
-        return list(result.scalars().all())
 
 
 class AdminLogRepository:
@@ -555,3 +727,61 @@ class AdminLogRepository:
             .limit(limit)
         )
         return list(result.scalars().all())
+    
+
+
+    from typing import Optional, List
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete
+from database.models import VideoScenario
+
+class VideoScenarioRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_all(self) -> List[VideoScenario]:
+        result = await self.session.execute(
+            select(VideoScenario)
+            .where(VideoScenario.is_active == True)
+            .order_by(VideoScenario.order_index, VideoScenario.id)
+        )
+        return list(result.scalars().all())
+
+    async def get_by_id(self, scenario_id: int) -> Optional[VideoScenario]:
+        result = await self.session.execute(
+            select(VideoScenario).where(VideoScenario.id == scenario_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def add(self, name: str, prompt: str, order_index: int = 0, is_active: bool = True) -> VideoScenario:
+        scenario = VideoScenario(
+            name=name,
+            prompt=prompt,
+            order_index=order_index,
+            is_active=is_active
+        )
+        self.session.add(scenario)
+        await self.session.commit()
+        await self.session.refresh(scenario)
+        return scenario
+
+    async def update(self, scenario_id: int, name: Optional[str] = None, prompt: Optional[str] = None,
+                     order_index: Optional[int] = None, is_active: Optional[bool] = None) -> Optional[VideoScenario]:
+        scenario = await self.get_by_id(scenario_id)
+        if not scenario:
+            return None
+        if name is not None:
+            scenario.name = name
+        if prompt is not None:
+            scenario.prompt = prompt
+        if order_index is not None:
+            scenario.order_index = order_index
+        if is_active is not None:
+            scenario.is_active = is_active
+        await self.session.commit()
+        await self.session.refresh(scenario)
+        return scenario
+
+    async def delete(self, scenario_id: int) -> None:
+        await self.session.execute(delete(VideoScenario).where(VideoScenario.id == scenario_id))
+        await self.session.commit()

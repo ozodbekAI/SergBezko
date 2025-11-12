@@ -1,468 +1,489 @@
 """
-Скрипт для заполнения базы данных: ModelType, SceneGroup/ScenePlanPrompt, PoseGroup/PoseSubgroup/PosePrompt
-Запустите после миграций:
-    python populate_all_data.py
+Seed: 3-level Scenes (Category -> Subcategory (Plan) -> Items)
+Run:
+    python populate_scenes_3level.py
 """
 import asyncio
 import logging
-from datetime import datetime
+from typing import Dict, List, Tuple
 
 from database import async_session_maker
-from database.repositories import (
-    ModelTypeRepository,
-    SceneRepository,
-    PoseRepository,
-)
+from database.repositories import SceneCategoryRepository
 
-# --------------------------------------------------------------------------- #
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-)
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+log = logging.getLogger(__name__)
 
 
-# ==============================  Model Types  ============================== #
-async def populate_model_types() -> None:
-    async with async_session_maker() as session:
-        repo = ModelTypeRepository(session)
-
-        logger.info("Добавление типов моделей...")
-
-        data = [
-            ("Брюнетка", "A brunette woman model with dark hair, natural beauty, professional fashion photography", 1),
-            ("Блондинка", "A blonde woman model with light hair, elegant appearance, high-fashion editorial style", 2),
-            ("Шатенка", "A redhead woman model with auburn hair, striking features, artistic fashion photography", 3),
-            ("Рыжая", "A ginger woman model with bright red hair, unique appearance, creative fashion shoot", 4),
-            ("Седая", "A silver-haired woman model with gray hair, sophisticated mature beauty, luxury fashion", 5),
-        ]
-
-        for name, prompt, order in data:
-            try:
-                obj = await repo.add(name=name, prompt=prompt, order_index=order)
-                logger.info(f"Тип модели: {name} (ID: {obj.id})")
-            except Exception as exc:
-                logger.warning(f"Тип модели «{name}» уже есть / ошибка: {exc}")
-
-        logger.info("Все типы моделей добавлены!")
-
-
-# ==============================  Scenes  ============================== #
-async def populate_scenes() -> None:
-    async with async_session_maker() as session:
-        repo = SceneRepository(session)
-
-        # ----------  Группы сцен  ----------
-        logger.info("Создание групп сцен...")
-        groups = [
-            ("Бутик / Showroom", 1),
-            ("Классическая гостиная / Интерьер", 2),
-            ("Улица / Переход через улицу", 3),
-            ("Индустриальный лофт", 4),
-            ("Hotel Lobby / Luxury Hall", 5),
-            ("Rooftop / City View Terrace", 6),
-            ("Art Gallery / Minimal Space", 7),
-            ("Boutique / Studio", 8),
-            ("Loft / Natural Light Space", 9),
-            ("Art Gallery / Neutral Wall", 10),
-        ]
-
-        group_id_map: dict[str, int] = {}
-        for name, order in groups:
-            try:
-                grp = await repo.add_group(name=name, order_index=order)
-                group_id_map[name] = grp.id
-                logger.info(f"Группа: {name} (ID: {grp.id})")
-            except Exception as exc:
-                logger.warning(f"Группа «{name}» уже существует: {exc}")
-                # получаем существующую
-                all_g = await repo.get_all_groups()
-                for g in all_g:
-                    if g.name == name:
-                        group_id_map[name] = g.id
-                        break
-
-        # ----------  Планы (универсальные)  ----------
-        logger.info("Создание планов...")
-        plans = [
-            ("Дальний план", 1),
-            ("Средний план", 2),
-            ("Крупный план", 3),
-            ("Боковой вид", 4),
-            ("Вид со спины", 5),
-            ("Динамический кадр", 6),
-        ]
-
-        plan_id_map: dict[str, int] = {}
-        for name, order in plans:
-            try:
-                pl = await repo.add_plan(name=name, order_index=order)
-                plan_id_map[name] = pl.id
-                logger.info(f"План: {name} (ID: {pl.id})")
-            except Exception as exc:
-                logger.warning(f"План «{name}» уже существует: {exc}")
-                all_p = await repo.get_all_plans()
-                for p in all_p:
-                    if p.name == name:
-                        plan_id_map[name] = p.id
-                        break
-
-        # ----------  Промпты для каждой группы  ----------
-        logger.info("Заполнение промптов сцен...")
-
-        # 1. Бутик / Showroom
-        boutique = {
+# ---------------------- DATA ---------------------- #
+def get_scene_data() -> Dict[str, Dict[str, List[Tuple[str, str]]]]:
+    """
+    Strukturasi:
+    {
+      "Категория": {
+          "Подкатегория (план)": [
+              ("Item nomi (kreativ)", "prompt"),
+              ...
+          ],
+          ...
+      },
+      ...
+    }
+    Har bir plan uchun 2 ta item (nom + prompt) berilgan.
+    """
+    return {
+        # 1) Бутик
+        "Бутик": {
             "Дальний план": [
-                ("Мягкое освещение", "full-body fashion photo, model standing confidently inside a luxury boutique, surrounded by clothing racks and soft spotlights, elegant mirror reflections, polished marble floor, cinematic composition, editorial style, natural posing, high-end fashion campaign look"),
+                ("Линии пространства бутика",
+                 "full-body editorial photo in luxury boutique, polished marble, mirrored walls, clothing racks geometry, soft spotlights, cinematic depth, confident stance"),
+                ("Панорама витрин и силуэт",
+                 "full-body shot with boutique aisles, elegant reflections, balanced perspective lines, high-end campaign look, natural pose, airy composition"),
             ],
             "Средний план": [
-                ("Витрина на фоне", "half-body shot, focus on outfit details and silhouette, boutique background softly blurred, warm lighting on model's face, subtle reflections in glass, refined editorial mood, balanced framing"),
+                ("Силуэт у витрины",
+                 "half-body portrait near glass showcase, soft bokeh from warm lights, focus on waistline and drape, refined editorial calm"),
+                ("Акцент на крое",
+                 "half-body shot, jacket open, subtle turn of shoulders, boutique background softly blurred, delicate light on fabric contours"),
             ],
             "Крупный план": [
-                ("Детали ткани", "close-up of neckline and fabric texture, gold jewelry sparkle, blurred boutique shelves behind, shallow depth of field, glossy magazine aesthetic, ultra-detailed fabric texture"),
+                ("Текстуры и блеск",
+                 "close-up on neckline and fabric grain, subtle jewelry glint, shallow DOF, glossy magazine aesthetic, tactile material rendering"),
+                ("Деталь лацкана",
+                 "macro lapel/stitched seam close-up, creamy background blur, precise texture, premium fashion feel"),
             ],
             "Боковой вид": [
-                ("Боковой портрет", "side-angle fashion portrait in boutique interior, soft warm lighting, mirror reflections emphasizing silhouette and drape of fabric, refined editorial mood, confident posture, natural realism"),
+                ("Профиль у зеркальной панели",
+                 "side-angle portrait, warm light contours silhouette, mirror reflection extends geometry, elegant posture, natural realism"),
+                ("Плечевая линия",
+                 "side view emphasizing shoulder line and garment drape, soft highlight, minimalist background reflections"),
             ],
             "Вид со спины": [
-                ("Вид сзади в коридоре", "back view full-body shot, model walking away through boutique corridor, focus on back detailing of outfit, soft golden reflections on polished surfaces, cinematic composition, elegant editorial tone"),
+                ("Уход через коридор",
+                 "back view full-body, walking down boutique corridor, golden reflections, focus on back tailoring and motion"),
+                ("Контуры на полировке",
+                 "back view near polished floor, long reflection, calm stride, cinematic space"),
             ],
             "Динамический кадр": [
-                ("Поворот в движении", "dynamic shot of model turning or walking through boutique, fabric moving naturally, light reflecting on surfaces, cinematic motion blur, elegant confident energy"),
+                ("Поворот с блеском",
+                 "fashion motion turn, fabric trailing, mirror streaks, elegant energy, slight motion blur"),
+                ("Шаг между стеллажами",
+                 "dynamic step between racks, airy light, floating hem, editorial movement"),
             ],
-        }
+        },
 
-        await _add_prompts_for_group(
-            repo,
-            group_name="Бутик / Showroom",
-            group_id_map=group_id_map,
-            plan_id_map=plan_id_map,
-            prompts_dict=boutique,
-        )
-
-        # 2. Классическая гостиная / Интерьер
-        interior = {
+        # 2) Классическая гостиная
+        "Классическая гостиная": {
             "Дальний план": [
-                ("Неоклассический интерьер", "model posing in a spacious neoclassical living room with high ceilings, soft daylight through tall windows, neutral tones and elegant furniture, editorial look, clean perspective"),
+                ("Высокие окна и перспектива",
+                 "full-body in neoclassical living room, tall windows, neutral palette, elegant furniture, clean perspective, soft daylight"),
+                ("Композиция с колонной",
+                 "full-body framed by column and sofa, calm editorial spacing, refined symmetry, natural pose"),
             ],
             "Средний план": [
-                ("У дивана", "mid-shot near a vintage sofa or column, focus on outfit's silhouette, natural light highlighting the waistline, gentle shadows adding depth, refined minimal style"),
+                ("У старинного дивана",
+                 "mid-shot near vintage sofa, light shaping waist and silhouette, gentle shadows, minimal refined mood"),
+                ("Контраст фактур",
+                 "mid-shot, fabric vs. carved wood contrast, warm side light, balanced framing"),
             ],
             "Крупный план": [
-                ("Детали одежды", "close-up on buttons, cuffs or neckline, soft warm reflection from nearby lamp, creamy background blur, tactile fabric texture captured sharply"),
+                ("Пуговицы и манжеты",
+                 "close-up on buttons/cuffs, creamy background blur, tactile fabric detail, warm reflection"),
+                ("Текстура воротника",
+                 "macro neckline and seam, delicate highlight, magazine clarity"),
             ],
             "Боковой вид": [
-                ("Профиль у мебели", "profile view of model standing beside classical furniture, soft window light outlining silhouette, elegant and balanced composition, refined editorial calm"),
+                ("Профиль у колонны",
+                 "profile near classical column, soft window light, elegant balance, serene editorial tone"),
+                ("Линия плеча в полутени",
+                 "side profile emphasizing shoulder curve, subtle half-light, sculptural feel"),
             ],
             "Вид со спины": [
-                ("У окна сзади", "full-body back view near window, daylight illuminating hair and garment folds, focus on back seam and natural drape, sophisticated calm mood"),
+                ("Контражур у окна",
+                 "back view near window, daylight outlining hair and folds, calm sophisticated atmosphere"),
+                ("Шов и драпировка",
+                 "back view with focus on back seam and garment drape, neutral tones, gentle light"),
             ],
             "Динамический кадр": [
-                ("Прогулка по комнате", "model gracefully walking across living room, dress or jacket moving softly, daylight trailing through windows, calm cinematic movement, timeless editorial atmosphere"),
+                ("Шаг по комнате",
+                 "graceful walk across room, soft daylight trails, floating fabric, cinematic calm"),
+                ("Плавный разворот",
+                 "slow turn, hemline motion, timeless editorial stillness"),
             ],
-        }
+        },
 
-        await _add_prompts_for_group(
-            repo,
-            group_name="Классическая гостиная / Интерьер",
-            group_id_map=group_id_map,
-            plan_id_map=plan_id_map,
-            prompts_dict=interior,
-        )
-
-        # 3. Улица / Переход через улицу
-        street = {
+        # 3) Улица / Переход через улицу
+        "Улица / Переход через улицу": {
             "Дальний план": [
-                ("Переход через улицу", "full-body outdoor fashion photo, model crossing city street in motion, modern architecture and cars blurred behind, strong natural sunlight, dynamic yet elegant pose"),
+                ("Шаг через город",
+                 "full-body outdoor crossing street, modern architecture blur, strong sunlight, confident stride"),
+                ("Городская перспектива",
+                 "full-body with crosswalk lines leading depth, cars bokeh, dynamic yet elegant pose"),
             ],
             "Средний план": [
-                ("На пешеходном переходе", "half-body shot at pedestrian crossing, breeze moving fabric slightly, confident expression, light bokeh from cars and buildings, stylish urban mood"),
+                ("На пешеходном переходе",
+                 "half-body at crosswalk, breeze moving fabric, confident gaze, urban bokeh"),
+                ("У края тротуара",
+                 "mid-shot at curb, poised stance, highlights on contours, city glow"),
             ],
             "Крупный план": [
-                ("Городские отражения", "close-up of collar, lapel, or accessories, city reflections in sunglasses or jewelry, cinematic contrast lighting, crisp texture of suiting fabric"),
+                ("Отблеск города в аксессуарах",
+                 "close-up collar/lapel, sunglasses reflection of skyline, cinematic contrast lighting"),
+                ("Текстура костюма",
+                 "macro suiting fabric texture, crisp detail, shallow DOF, urban tone"),
             ],
             "Боковой вид": [
-                ("Профиль на переходе", "side view of model mid-step on crosswalk, wind lifting fabric slightly, urban reflections, natural sunlight accentuating profile, cinematic sense of motion"),
+                ("Профиль на переходе",
+                 "side view mid-step, wind lift, sun accent on profile, sense of motion"),
+                ("Городские контуры",
+                 "side-angle with building lines, moving traffic bokeh, clean silhouette"),
             ],
             "Вид со спины": [
-                ("Уходит по переходу", "back view walking away along crosswalk, city blur behind, coat tails in motion, golden hour lighting, confident modern energy"),
+                ("В закат по зебре",
+                 "back view walking golden-hour, coat tails in motion, confident energy"),
+                ("Шлейф движения",
+                 "back view with subtle motion trail, warm reflections"),
             ],
             "Динамический кадр": [
-                ("Поворот на переходе", "fashion motion shot — model turning on crosswalk or adjusting jacket mid-step, strong sunlight and moving reflections, cinematic energy, natural flow of fabric"),
+                ("Разворот на ходу",
+                 "turning mid-step, fabric swirl, strong sunlight flicker, cinematic energy"),
+                ("Жест и шаг",
+                 "adjusting jacket while walking, natural flow, motion emphasis"),
             ],
-        }
+        },
 
-        await _add_prompts_for_group(
-            repo,
-            group_name="Улица / Переход через улицу",
-            group_id_map=group_id_map,
-            plan_id_map=plan_id_map,
-            prompts_dict=street,
-        )
+        # 4) Индустриальный лофт
+        "Индустриальный лофт": {
+            "Дальний план": [
+                ("Пространство кирпича и света",
+                 "full-body in industrial loft, exposed brick, large windows, soft daylight, minimalist props"),
+                ("Графика металла",
+                 "full-body with steel structures, airy composition, editorial framing"),
+            ],
+            "Средний план": [
+                ("У окна и колонны",
+                 "waist-up near window or column, warm sunlight on contours, modern creative feel"),
+                ("Контуры на кирпиче",
+                 "mid-shot, fabric vs. brick texture contrast, subtle highlight"),
+            ],
+            "Крупный план": [
+                ("Золотой свет на швах",
+                 "close-up stitching/buttons, golden side light, realistic tactile depth"),
+                ("Фактура денима/твила",
+                 "macro fold texture, soft background metal blur, precise detail"),
+            ],
+            "Боковой вид": [
+                ("Профиль у панорамного окна",
+                 "side portrait, natural light defining shoulder line, textured brick background"),
+                ("Линия силуэта",
+                 "side-angle emphasizing garment drape, clean modern tone"),
+            ],
+            "Вид со спины": [
+                ("Силуэт на фоне окон",
+                 "back view facing window, framed by brick & metal, focus on back tailoring"),
+                ("Тихий шаг в цеху",
+                 "back view slow walk, moody creative atmosphere"),
+            ],
+            "Динамический кадр": [
+                ("Пыль и лучи",
+                 "slow walk across loft, dust in light beams, soft fabric motion, cinematic stillness"),
+                ("Сдвиг ракурса",
+                 "gentle turn with trailing hem, ambient daylight flow"),
+            ],
+        },
 
-        logger.info("Все промпты сцен добавлены!")
+        # 5) Холл отеля
+        "Холл отеля": {
+            "Дальний план": [
+                ("Марш по мрамору",
+                 "full-body walk in luxury hotel lobby, marble floors, chandeliers, golden ambient light, reflections"),
+                ("Ось колонн",
+                 "full-body framed by columns, elegant perspective, polished surfaces glow"),
+            ],
+            "Средний план": [
+                ("У лифта",
+                 "half-body near elevator/chandelier bokeh, soft warm light, poised confident look"),
+                ("Силуэт у колонны",
+                 "mid-shot by marble column, warm rim light on contours, campaign feel"),
+            ],
+            "Крупный план": [
+                ("Блики люстр",
+                 "neckline/jewelry close-up, chandelier bokeh, glossy high-end aesthetic"),
+                ("Текстура шелка",
+                 "macro fabric sheen, soft reflections on skin and metal accents"),
+            ],
+            "Боковой вид": [
+                ("Профиль в золоте",
+                 "side portrait with golden glow, outline of profile and garment curves"),
+                ("Свет на контуре",
+                 "side-angle, polished floor reflection line, refined elegance"),
+            ],
+            "Вид со спины": [
+                ("Силуэт в галерее холла",
+                 "back view full-body, chandeliers framing, marble reflection, cinematic composition"),
+                ("Шаг к выходу",
+                 "back view walk across lobby, soft trail of light"),
+            ],
+            "Динамический кадр": [
+                ("Движение люкса",
+                 "confident cross-lobby walk, fabric sway, chandelier motion blur"),
+                ("Поворот у ресепшн",
+                 "turn with flowing hem near reception, graceful editorial tone"),
+            ],
+        },
+
+        # 6) Видовая веранда на город
+        "Видовая веранда на город": {
+            "Дальний план": [
+                ("Горизонт и свобода",
+                 "full-body on rooftop terrace, city skyline, golden hour, wind in fabric and hair, sophisticated vibe"),
+                ("Линия парапета",
+                 "full-body along terrace edge, cinematic horizon, sense of independence"),
+            ],
+            "Средний план": [
+                ("Закат и силуэт",
+                 "waist-up with skyline bokeh, sunset tones on skin, calm confident expression"),
+                ("Ветер в лацканах",
+                 "mid-shot, subtle breeze moving jacket, elevated mood"),
+            ],
+            "Крупный план": [
+                ("Лацкан и серьга",
+                 "close-up on lapel/earring against blurred skyline, warm sun reflections"),
+                ("Прядь и ткань",
+                 "macro hair movement and fabric texture, crisp detail, modern editorial"),
+            ],
+            "Боковой вид": [
+                ("Профиль на фоне города",
+                 "side-angle portrait, hair in breeze, sunset defining silhouette"),
+                ("Контур заката",
+                 "side view with golden rim light, soft skyline gradient"),
+            ],
+            "Вид со спины": [
+                ("К городу лицом",
+                 "back view facing skyline, coat moving slightly with wind, sunset glow"),
+                ("Тихая опора на поручень",
+                 "back view leaning on railing, serene composition"),
+            ],
+            "Динамический кадр": [
+                ("По кромке террасы",
+                 "walking along rooftop edge, wind through fabric, cinematic movement"),
+                ("Поворот к горизонту",
+                 "slow turn towards horizon, motion blur strokes"),
+            ],
+        },
+
+        # 7) Галерея
+        "Галерея": {
+            "Дальний план": [
+                ("Минимализм залов",
+                 "full-body in modern art gallery, neutral white walls, abstract paintings, soft even light"),
+                ("Симметрия экспозиции",
+                 "full-body centered between artworks, refined clean aesthetic"),
+            ],
+            "Средний план": [
+                ("У скульптуры",
+                 "mid-shot near sculpture, balanced symmetry, calm editorial tone"),
+                ("Линии на фоне полотна",
+                 "mid-shot with painting backdrop, focus on silhouette and clean lines"),
+            ],
+            "Крупный план": [
+                ("Тактильная материя",
+                 "close-up on fabric folds/accessory, soft museum lighting, neutral blur"),
+                ("Деталь фурнитуры",
+                 "macro clasp/button, understated luxury, precise rendering"),
+            ],
+            "Боковой вид": [
+                ("Профиль у стены",
+                 "side-angle portrait near gallery wall, minimal light gradients, garment profile clear"),
+                ("Контур в полутоне",
+                 "side view with gentle tonal shift, harmonic minimalism"),
+            ],
+            "Вид со спины": [
+                ("Между полотнами",
+                 "back view walking between artworks, balanced symmetry, neutral lighting"),
+                ("Тихий проход",
+                 "back view with soft steps, serene editorial atmosphere"),
+            ],
+            "Динамический кадр": [
+                ("Поворот у инсталляции",
+                 "slow turn/walk past artwork, subtle motion blur, flowing fabric"),
+                ("Ритм зала",
+                 "movement echoing gallery rhythm, timeless minimalist grace"),
+            ],
+        },
+
+        # 8) Минималистичная студия
+        "Минималистичная студия": {
+            "Дальний план": [
+                ("Чистая геометрия",
+                 "full-body in minimal studio, soft daylight, beige walls, neutral background, clean modern elegance"),
+                ("Коммерческий кадр",
+                 "full-body commercial editorial tone, balanced negative space"),
+            ],
+            "Средний план": [
+                ("Силуэт и пропорции",
+                 "half-body, soft natural light, calm expression, focus on proportions, minimal aesthetic"),
+                ("У стены в полоборота",
+                 "mid-shot near wall, subtle shoulder turn, refined simplicity"),
+            ],
+            "Крупный план": [
+                ("Материал под светом",
+                 "close-up fabric texture/neckline, diffused daylight, clean detail focus"),
+                ("Строчка и край",
+                 "macro seam and edge, precise minimal editorial"),
+            ],
+            "Боковой вид": [
+                ("Контур у стены",
+                 "side-angle, daylight outlining silhouette, shoulder/waist softly contoured"),
+                ("Пластика линии",
+                 "side view emphasizing drape, serene modern look"),
+            ],
+            "Вид со спины": [
+                ("Спокойный разворот",
+                 "back view standing/walking, soft wall reflection, focus on back detailing"),
+                ("Плавная драпировка",
+                 "back view, garment drape and flow, quiet composition"),
+            ],
+            "Динамический кадр": [
+                ("Ход через свет",
+                 "dynamic step through studio light streaks, natural motion"),
+                ("Линии движения",
+                 "gentle move, fabric responds softly, cinematic flow"),
+            ],
+        },
+
+        # 9) Лофт минимализм
+        "Лофт минимализм": {
+            "Дальний план": [
+                ("Окна и воздух",
+                 "full-body in minimalist loft, large windows, daylight filling space, muted palette"),
+                ("Чистые плоскости",
+                 "full-body with planar walls, effortless elegance, editorial clarity"),
+            ],
+            "Средний план": [
+                ("У окна",
+                 "waist-up by window, soft light on face and outfit, calm sophistication"),
+                ("Гладкая композиция",
+                 "mid-shot with balanced lines, timeless minimalism"),
+            ],
+            "Крупный план": [
+                ("Манжета и линия",
+                 "close-up sleeve/neckline, soft natural light, subtle contrast"),
+                ("Тон ткани",
+                 "macro folds and texture, editorial precision"),
+            ],
+            "Боковой вид": [
+                ("Профиль в луче",
+                 "profile near window ray, shoulder line highlighted, textured backdrop"),
+                ("Силуэт стены",
+                 "side view against plain wall, drape emphasized"),
+            ],
+            "Вид со спины": [
+                ("К свету спиной",
+                 "back view facing window, outline by daylight, gentle motion"),
+                ("Шаг в тишине",
+                 "back view step, quiet spacious mood"),
+            ],
+            "Динамический кадр": [
+                ("Дыхание пространства",
+                 "walking across loft, fabric moves naturally, warm sunlight trails"),
+                ("Лёгкий поворот",
+                 "soft turn, effortless movement, sense of space"),
+            ],
+        },
+
+        # 10) Арт Галерея минимализм
+        "Арт Галерея минимализм": {
+            "Дальний план": [
+                ("Белые стены и баланс",
+                 "full-body in contemporary gallery, neutral walls, natural daylight, refined minimal composition"),
+                ("Ось экспозиции",
+                 "full-body aligned with exhibits, contemporary atmosphere"),
+            ],
+            "Средний план": [
+                ("У инсталляции",
+                 "mid-shot near artwork/sculpture, soft side light, clean lines emphasizing silhouette"),
+                ("Сдержанная симметрия",
+                 "mid-shot with balanced symmetry, timeless minimal tone"),
+            ],
+            "Крупный план": [
+                ("Текстура и акцент",
+                 "close-up on fabric/accessory, diffused gallery light, neutral background, tactile realism"),
+                ("Минимал-деталь",
+                 "macro understated detail, elegant restraint"),
+            ],
+            "Боковой вид": [
+                ("Профиль у полотна",
+                 "side-angle by wall, sunlight defining profile and structure, calm editorial"),
+                ("Контур галереи",
+                 "side view with subtle glow of art space, minimalist calm"),
+            ],
+            "Вид со спины": [
+                ("Проход вдоль стены",
+                 "back view walking along white wall, daylight reflections on floor, poised posture"),
+                ("Тихий силуэт",
+                 "back view soft focus on back tailoring, serene composition"),
+            ],
+            "Динамический кадр": [
+                ("Шаг мимо искусства",
+                 "motion shot turning/walking past artwork, soft daylight motion blur"),
+                ("Ритм экспозиции",
+                 "flowing fabric echoes gallery rhythm, modern grace"),
+            ],
+        },
+    }
 
 
-async def _add_prompts_for_group(
-    repo: SceneRepository,
-    group_name: str,
-    group_id_map: dict[str, int],
-    plan_id_map: dict[str, int],
-    prompts_dict: dict[str, list[tuple[str, str]]],
-) -> None:
-    """Вспомогательная функция – добавление всех промптов одной группы."""
-    if group_name not in group_id_map:
-        logger.warning(f"Группа «{group_name}» не найдена – пропускаем.")
-        return
+# ---------------------- SEED LOGIC ---------------------- #
+async def populate_scenes_3level() -> None:
+    data = get_scene_data()
 
-    group_id = group_id_map[group_name]
-
-    for plan_name, items in prompts_dict.items():
-        if plan_name not in plan_id_map:
-            continue
-        plan_id = plan_id_map[plan_name]
-
-        for idx, (name, prompt) in enumerate(items, start=1):
-            try:
-                await repo.add_prompt(
-                    group_id=group_id,
-                    plan_id=plan_id,
-                    name=name,
-                    prompt=prompt,
-                    order_index=idx,
-                )
-                logger.info(f"  Промпт «{name}» → {group_name}/{plan_name}")
-            except Exception as exc:
-                logger.warning(f"  Промпт «{name}» уже есть / ошибка: {exc}")
-
-
-# ==============================  Poses  ============================== #
-async def populate_poses() -> None:
     async with async_session_maker() as session:
-        repo = PoseRepository(session)
+        repo = SceneCategoryRepository(session)
 
-        # ----------  Группы поз  ----------
-        logger.info("Создание групп поз...")
-        pose_groups = [
-            ("Стоя", 1),
-            ("Сидя", 2),
-            ("В движении", 3),
-            ("Переходные", 4),
-            ("Пластичные", 5),
-            ("Портретные", 6),
-        ]
+        # Cache existing categories once
+        existing_categories = {c.name: c for c in await repo.get_all_categories()}
 
-        group_id_map: dict[str, int] = {}
-        for name, order in pose_groups:
-            try:
-                grp = await repo.add_group(name=name, order_index=order)
-                group_id_map[name] = grp.id
-                logger.info(f"Группа поз: {name} (ID: {grp.id})")
-            except Exception as exc:
-                logger.warning(f"Группа поз «{name}» уже существует: {exc}")
-                all_g = await repo.get_all_groups()
-                for g in all_g:
-                    if g.name == name:
-                        group_id_map[name] = g.id
-                        break
+        for order_c, (cat_name, subcats) in enumerate(data.items(), start=1):
+            # Category
+            if cat_name in existing_categories:
+                cat = existing_categories[cat_name]
+            else:
+                cat = await repo.add_category(name=cat_name, order_index=order_c)
+                existing_categories[cat_name] = cat
+            log.info(f"[CATEGORY] {cat_name} (id={cat.id})")
 
-        # ----------  Подгруппы + промпты  ----------
-        await _populate_standing(repo, group_id_map)
-        await _populate_sitting(repo, group_id_map)
-        await _populate_dynamic(repo, group_id_map)
+            # Subcategories for this category
+            existing_subcats = {s.name: s for s in await repo.get_subcategories_by_category(cat.id)}
 
-        logger.info("Все позы добавлены!")
+            for order_s, (sub_name, items) in enumerate(subcats.items(), start=1):
+                if sub_name in existing_subcats:
+                    sub = existing_subcats[sub_name]
+                else:
+                    sub = await repo.add_subcategory(category_id=cat.id, name=sub_name, order_index=order_s)
+                    existing_subcats[sub_name] = sub
+                log.info(f"  [SUBCATEGORY] {sub_name} (id={sub.id}) in {cat_name}")
 
+                # Items for subcategory
+                existing_items = {i.name: i for i in await repo.get_items_by_subcategory(sub.id)}
 
-# -------------------  Стоячие подгруппы  ------------------- #
-async def _populate_standing(repo: PoseRepository, group_id_map: dict[str, int]) -> None:
-    group_name = "Стоя"
-    if group_name not in group_id_map:
-        return
-    group_id = group_id_map[group_name]
-
-    subgroups = [
-        ("Возле стены", 1),
-        ("Улица", 2),
-        ("Лицом", 3),
-        ("Боком", 4),
-        ("Casual", 5),
-    ]
-
-    sub_id_map: dict[str, int] = {}
-    for sub_name, order in subgroups:
-        try:
-            sub = await repo.add_subgroup(group_id=group_id, name=sub_name, order_index=order)
-            sub_id_map[sub_name] = sub.id
-            logger.info(f"  Подгруппа «{sub_name}» (ID: {sub.id})")
-        except Exception as exc:
-            logger.warning(f"  Подгруппа «{sub_name}» уже есть: {exc}")
-            all_sub = await repo.get_subgroups_by_group(group_id)
-            for s in all_sub:
-                if s.name == sub_name:
-                    sub_id_map[sub_name] = s.id
-                    break
-
-    # ----- Возле стены -----
-    wall_prompts = [
-        ("Руки в карманах", "standing near wall, hands in pockets, casual pose, confident posture, fashion photography, natural lighting"),
-        ("Опирается на стену", "leaning against wall, relaxed pose, one leg bent, shoulder touching wall, casual confidence, editorial style"),
-        ("Скрещенные руки", "standing near wall, arms crossed, assertive pose, confident expression, fashion editorial, clean background"),
-        ("Одна нога согнута", "standing near wall, one leg bent at knee, relaxed casual stance, fashion photography"),
-        ("Рука на стене", "standing with one hand touching wall, casual elegant pose, natural light, editorial style"),
-    ]
-    await _add_pose_prompts(repo, sub_id_map.get("Возле стены"), wall_prompts)
-
-    # ----- Улица -----
-    street_prompts = [
-        ("Идет по улице", "walking confidently on street, natural stride, arms swinging naturally, urban fashion photography"),
-        ("Остановилась на тротуаре", "standing on sidewalk, one hip slightly out, hand on hip, street fashion pose, urban background"),
-        ("Переходит дорогу", "crossing street confidently, mid-stride, natural movement, city background blur, fashion editorial"),
-        ("У светофора", "standing at traffic light, casual waiting pose, hand in pocket, urban fashion style"),
-    ]
-    await _add_pose_prompts(repo, sub_id_map.get("Улица"), street_prompts)
-
-    # ----- Лицом -----
-    face_prompts = [
-        ("Прямо в камеру", "standing straight facing camera, confident eye contact, balanced posture, professional fashion photography"),
-        ("Руки на бедрах", "standing facing camera, hands on hips, power pose, confident stance, editorial style"),
-        ("Одна нога впереди", "standing facing camera, one foot forward, elegant pose, natural posture, fashion editorial"),
-    ]
-    await _add_pose_prompts(repo, sub_id_map.get("Лицом"), face_prompts)
+                for order_i, (item_name, prompt) in enumerate(items, start=1):
+                    if item_name in existing_items:
+                        log.info(f"    [ITEM:skip] {item_name} (exists)")
+                        continue
+                    item = await repo.add_item(
+                        subcategory_id=sub.id,
+                        name=item_name,
+                        prompt=prompt,
+                        order_index=order_i
+                    )
+                    log.info(f"    [ITEM] {item_name} (id={item.id})")
 
 
-# -------------------  Сидячие подгруппы  ------------------- #
-async def _populate_sitting(repo: PoseRepository, group_id_map: dict[str, int]) -> None:
-    group_name = "Сидя"
-    if group_name not in group_id_map:
-        return
-    group_id = group_id_map[group_name]
-
-    subgroups = [
-        ("На стуле", 1),
-        ("На полу", 2),
-        ("На скамье", 3),
-    ]
-
-    sub_id_map: dict[str, int] = {}
-    for sub_name, order in subgroups:
-        try:
-            sub = await repo.add_subgroup(group_id=group_id, name=sub_name, order_index=order)
-            sub_id_map[sub_name] = sub.id
-            logger.info(f"  Подгруппа «{sub_name}» (ID: {sub.id})")
-        except Exception as exc:
-            logger.warning(f"  Подгруппа «{sub_name}» уже есть: {exc}")
-            all_sub = await repo.get_subgroups_by_group(group_id)
-            for s in all_sub:
-                if s.name == sub_name:
-                    sub_id_map[sub_name] = s.id
-                    break
-
-    # ----- На стуле -----
-    chair_prompts = [
-        ("Сидит прямо", "sitting on chair, back straight, hands on knees, confident posture, professional fashion photography"),
-        ("Ноги скрещены", "sitting on chair, legs crossed elegantly, relaxed posture, editorial fashion style"),
-        ("Боком на стуле", "sitting sideways on chair, looking over shoulder, graceful pose, artistic photography"),
-        ("Облокотилась", "sitting on chair, leaning on armrest, relaxed elegant pose, natural lighting"),
-        ("Ноги вытянуты", "sitting on chair, legs extended forward, casual comfortable pose, fashion editorial"),
-    ]
-    await _add_pose_prompts(repo, sub_id_map.get("На стуле"), chair_prompts)
-
-    # ----- На полу -----
-    floor_prompts = [
-        ("Сидит по-турецки", "sitting cross-legged on floor, relaxed casual pose, natural light, bohemian style"),
-        ("Ноги согнуты", "sitting on floor with knees bent, arms wrapped around legs, casual intimate pose"),
-        ("Опирается на руку", "sitting on floor, leaning on one hand, relaxed elegant pose, editorial style"),
-    ]
-    await _add_pose_prompts(repo, sub_id_map.get("На полу"), floor_prompts)
-
-
-# -------------------  Динамические подгруппы  ------------------- #
-async def _populate_dynamic(repo: PoseRepository, group_id_map: dict[str, int]) -> None:
-    group_name = "В движении"
-    if group_name not in group_id_map:
-        return
-    group_id = group_id_map[group_name]
-
-    subgroups = [
-        ("Идёт", 1),
-        ("Прыгает", 2),
-        ("Поворачивается", 3),
-        ("Бежит", 4),
-    ]
-
-    sub_id_map: dict[str, int] = {}
-    for sub_name, order in subgroups:
-        try:
-            sub = await repo.add_subgroup(group_id=group_id, name=sub_name, order_index=order)
-            sub_id_map[sub_name] = sub.id
-            logger.info(f"  Подгруппа «{sub_name}» (ID: {sub.id})")
-        except Exception as exc:
-            logger.warning(f"  Подгруппа «{sub_name}» уже есть: {exc}")
-            all_sub = await repo.get_subgroups_by_group(group_id)
-            for s in all_sub:
-                if s.name == sub_name:
-                    sub_id_map[sub_name] = s.id
-                    break
-
-    # ----- Идёт -----
-    walk_prompts = [
-        ("Уверенная походка", "walking confidently, strong stride, arms moving naturally, dynamic fashion photography, motion captured"),
-        ("Легкая прогулка", "casual walk, relaxed movement, natural flow, fashion editorial in motion, soft movement"),
-        ("Широкий шаг", "walking with wide confident stride, powerful movement, fashion editorial, dynamic energy"),
-        ("Медленная походка", "slow graceful walk, elegant movement, flowing fabric, artistic fashion photography"),
-    ]
-    await _add_pose_prompts(repo, sub_id_map.get("Идёт"), walk_prompts)
-
-    # ----- Поворачивается -----
-    turn_prompts = [
-        ("Поворот головы", "turning head while walking, hair in motion, graceful movement, fashion photography, dynamic moment"),
-        ("Оглядывается", "looking back over shoulder while moving, elegant turn, flowing fabric, editorial style"),
-        ("Поворот всего тела", "full body turn while in motion, dramatic movement, fabric swirling, cinematic fashion"),
-        ("Быстрый поворот", "quick turn with hair flying, dynamic energy, motion blur, fashion editorial"),
-    ]
-    await _add_pose_prompts(repo, sub_id_map.get("Поворачивается"), turn_prompts)
-
-
-async def _add_pose_prompts(
-    repo: PoseRepository,
-    subgroup_id: int | None,
-    prompts: list[tuple[str, str]],
-) -> None:
-    if subgroup_id is None:
-        return
-    for idx, (name, prompt) in enumerate(prompts, start=1):
-        try:
-            await repo.add_prompt(
-                subgroup_id=subgroup_id,
-                name=name,
-                prompt=prompt,
-                order_index=idx,
-            )
-            logger.info(f"    Промпт позы «{name}»")
-        except Exception as exc:
-            logger.warning(f"    Промпт позы «{name}» уже есть / ошибка: {exc}")
-
-
-# ==============================  MAIN  ============================== #
-async def main() -> None:
-    logger.info("НАЧАЛО ЗАПОЛНЕНИЯ БД".center(80, "="))
-
-    await populate_model_types()
-    await populate_scenes()
-    await populate_poses()
-
-    logger.info("БАЗА ДАННЫХ УСПЕШНО ЗАПОЛНЕНА!".center(80, "="))
-    logger.info(
-        "\n".join(
-            [
-                "• 5 типов моделей",
-                "• 10 групп сцен + 6 планов в каждой",
-                "• 6 групп поз → подгруппы → промпты",
-                "Готово к запуску бота!",
-            ]
-        )
-    )
+# ---------------------- MAIN ---------------------- #
+async def main():
+    log.info("=== START: 3-level scene seeding ===")
+    await populate_scenes_3level()
+    log.info("=== DONE: 3-level scene seeding ===")
 
 
 if __name__ == "__main__":

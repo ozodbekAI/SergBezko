@@ -8,7 +8,7 @@ from states import ProductCardStates
 from keyboards import (get_back_button_product_card, get_confirmation_keyboard_product_card, 
                        get_repeat_button, get_back_to_generation, get_generation_menu)
 from database import async_session_maker
-from database.repositories import UserRepository, SceneRepository
+from database.repositories import UserRepository, SceneCategoryRepository
 from services.config_loader import config_loader
 from services.kie_service import kie_service
 from utils.photo import get_photo_url_from_message
@@ -31,6 +31,15 @@ async def safe_edit_or_skip(callback: CallbackQuery, text: str, reply_markup=Non
 
 def get_back_button(current_step: str):
     builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"pc_back_{current_step}"))
+    return builder.as_markup()
+
+def get_back_button_with_buy(current_step: str):
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="💳 Пополнить баланс", 
+        callback_data="cabinet_balance"
+    ))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"pc_back_{current_step}"))
     return builder.as_markup()
 
@@ -78,7 +87,7 @@ async def product_card_photo_received(message: Message, state: FSMContext):
         return
     
     await state.update_data(photo_url=photo_url)
-    await state.set_state(ProductCardStates.selecting_scene)
+    await state.set_state(ProductCardStates.selecting_scene_category)
     
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📋 Все сцены", callback_data="pc_all_scenes"))
@@ -116,7 +125,7 @@ async def back_navigation_product_card(callback: CallbackQuery, state: FSMContex
         return
     
     if back_data == "pc_all_scenes":
-        await state.set_state(ProductCardStates.selecting_scene)
+        await state.set_state(ProductCardStates.selecting_scene_category)
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="📋 Все сцены", callback_data="pc_all_scenes"))
         builder.row(InlineKeyboardButton(text="🎯 Выбрать сцену", callback_data="pc_select_scene"))
@@ -124,8 +133,8 @@ async def back_navigation_product_card(callback: CallbackQuery, state: FSMContex
         await safe_edit_or_skip(callback, "Выберите вариант:", reply_markup=builder.as_markup())
         return
     
-    if back_data == "selecting_scene_groups":
-        await state.set_state(ProductCardStates.selecting_scene)
+    if back_data == "selecting_scene_category":
+        await state.set_state(ProductCardStates.selecting_scene_category)
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="📋 Все сцены", callback_data="pc_all_scenes"))
         builder.row(InlineKeyboardButton(text="🎯 Выбрать сцену", callback_data="pc_select_scene"))
@@ -133,65 +142,65 @@ async def back_navigation_product_card(callback: CallbackQuery, state: FSMContex
         await safe_edit_or_skip(callback, "Выберите вариант:", reply_markup=builder.as_markup())
         return
     
-    if back_data == "selecting_scene_group":
+    if back_data == "selecting_scene_subcategory":
         async with async_session_maker() as session:
-            scene_repo = SceneRepository(session)
-            groups = await scene_repo.get_all_groups()
+            scene_repo = SceneCategoryRepository(session)
+            categories = await scene_repo.get_all_categories()
         
-        await state.set_state(ProductCardStates.selecting_scene)
+        await state.set_state(ProductCardStates.selecting_scene_category)
         
         builder = InlineKeyboardBuilder()
-        for group in groups:
+        for category in categories:
             builder.row(InlineKeyboardButton(
-                text=group.name,
-                callback_data=f"pc_scene_group_{group.id}"
+                text=category.name,
+                callback_data=f"pc_scene_cat_{category.id}"
             ))
-        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_groups"))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_category"))
         
         await safe_edit_or_skip(callback,
-            "Выберите группу сцен:",
+            "Выберите категорию сцен:",
             reply_markup=builder.as_markup()
         )
         return
     
-    if back_data == "selecting_plan":
+    if back_data == "selecting_scene_item":
         data = await state.get_data()
-        group_id = int(data.get("selected_group", 0))
+        category_id = int(data.get("selected_category", 0))
         
         async with async_session_maker() as session:
-            scene_repo = SceneRepository(session)
-            group = await scene_repo.get_group(group_id)
-            plans = await scene_repo.get_all_plans()
+            scene_repo = SceneCategoryRepository(session)
+            category = await scene_repo.get_category(category_id)
+            subcategories = await scene_repo.get_subcategories_by_category(category_id)
         
-        await state.set_state(ProductCardStates.selecting_plan)
+        await state.set_state(ProductCardStates.selecting_scene_subcategory)
         
         builder = InlineKeyboardBuilder()
         
         builder.row(InlineKeyboardButton(
-            text="✅ Все планы группы",
-            callback_data=f"pc_all_plans_{group_id}"
+            text="✅ Все подкатегории",
+            callback_data=f"pc_all_subcats_{category_id}"
         ))
         
-        for plan in plans:
-            prompts = await scene_repo.get_prompts_by_group_and_plan(group_id, plan.id)
-            prompts_count = len(prompts)
+        for subcat in subcategories:
+            items = await scene_repo.get_items_by_subcategory(subcat.id)
+            items_count = len(items)
             
             builder.row(InlineKeyboardButton(
-                text=f"{plan.name} ({prompts_count} вариантов)",
-                callback_data=f"pc_plan_{plan.id}_{group_id}"
+                text=f"{subcat.name} ({items_count} вариантов)",
+                callback_data=f"pc_subcat_{subcat.id}_{category_id}"
             ))
         
-        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_group"))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_subcategory"))
         
         await safe_edit_or_skip(callback,
-            f"🌆 <b>{group.name}</b>\n\nВыберите план съёмки:",
+            f"🌆 <b>{category.name}</b>\n\nВыберите подкатегорию:",
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
         return
     
     if back_data in ["confirming_single", "confirming_group", "confirming_all"]:
-        await state.set_state(ProductCardStates.selecting_scene)
+        await state.set_state(ProductCardStates.selecting_scene_category)
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="📋 Все сцены", callback_data="pc_all_scenes"))
         builder.row(InlineKeyboardButton(text="🎯 Выбрать сцену", callback_data="pc_select_scene"))
@@ -200,16 +209,21 @@ async def back_navigation_product_card(callback: CallbackQuery, state: FSMContex
         return
 
 
-@router.callback_query(ProductCardStates.selecting_scene, F.data == "pc_all_scenes")
+@router.callback_query(ProductCardStates.selecting_scene_category, F.data == "pc_all_scenes")
 async def product_card_all_scenes(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
     async with async_session_maker() as session:
-        scene_repo = SceneRepository(session)
-        groups = await scene_repo.get_all_groups()
-        plans = await scene_repo.get_all_plans()
+        scene_repo = SceneCategoryRepository(session)
+        hierarchy = await scene_repo.get_full_hierarchy()
     
-    total_results = len(groups) * len(plans)
+    # Hisoblash: barcha category -> subcategory -> items
+    total_results = sum(
+        len(sc["items"])
+        for cat in hierarchy.values()
+        for sc in cat["subcategories"].values()
+    )
+    
     cost = total_results * config_loader.pricing["product_card"]["per_result"]
     
     await state.update_data(
@@ -224,7 +238,7 @@ async def product_card_all_scenes(callback: CallbackQuery, state: FSMContext):
         if not has_balance:
             await safe_edit_or_skip(callback,
                 "❌ Недостаточно кредитов на балансе.\n\nПополните баланс в разделе 'Мой кабинет.'",
-                reply_markup=get_back_button("waiting_for_photo")
+                reply_markup=get_back_button_with_buy("waiting_for_photo")
             )
             return 
     
@@ -235,79 +249,84 @@ async def product_card_all_scenes(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(ProductCardStates.selecting_scene, F.data == "pc_select_scene")
+@router.callback_query(ProductCardStates.selecting_scene_category, F.data == "pc_select_scene")
 async def product_card_select_scene(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
     async with async_session_maker() as session:
-        scene_repo = SceneRepository(session)
-        groups = await scene_repo.get_all_groups()
+        scene_repo = SceneCategoryRepository(session)
+        categories = await scene_repo.get_all_categories()
     
     builder = InlineKeyboardBuilder()
-    for group in groups:
+    for category in categories:
         builder.row(InlineKeyboardButton(
-            text=group.name,
-            callback_data=f"pc_scene_group_{group.id}"
+            text=category.name,
+            callback_data=f"pc_scene_cat_{category.id}"
         ))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_groups"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_category"))
     
-    await safe_edit_or_skip(callback, "Выберите группу сцен:", reply_markup=builder.as_markup())
+    await safe_edit_or_skip(callback, "Выберите категорию сцен:", reply_markup=builder.as_markup())
 
 
-@router.callback_query(ProductCardStates.selecting_scene, F.data.startswith("pc_scene_group_"))
-async def select_scene_group(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(ProductCardStates.selecting_scene_category, F.data.startswith("pc_scene_cat_"))
+async def select_scene_category(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    group_id = int(callback.data.replace("pc_scene_group_", ""))
+    category_id = int(callback.data.replace("pc_scene_cat_", ""))
     
-    await state.update_data(selected_group=group_id)
+    await state.update_data(selected_category=category_id)
     
     async with async_session_maker() as session:
-        scene_repo = SceneRepository(session)
-        group = await scene_repo.get_group(group_id)
-        plans = await scene_repo.get_all_plans()
+        scene_repo = SceneCategoryRepository(session)
+        category = await scene_repo.get_category(category_id)
+        subcategories = await scene_repo.get_subcategories_by_category(category_id)
     
-    await state.set_state(ProductCardStates.selecting_plan)
+    await state.set_state(ProductCardStates.selecting_scene_subcategory)
     
     builder = InlineKeyboardBuilder()
     
     builder.row(InlineKeyboardButton(
-        text="✅ Все планы группы",
-        callback_data=f"pc_all_plans_{group_id}"
+        text="✅ Все подкатегории",
+        callback_data=f"pc_all_subcats_{category_id}"
     ))
 
-    for plan in plans:
-        prompts = await scene_repo.get_prompts_by_group_and_plan(group_id, plan.id)
-        prompts_count = len(prompts)
+    for subcat in subcategories:
+        items = await scene_repo.get_items_by_subcategory(subcat.id)
+        items_count = len(items)
         
         builder.row(InlineKeyboardButton(
-            text=f"{plan.name} ({prompts_count} вариантов)",
-            callback_data=f"pc_plan_{plan.id}_{group_id}"
+            text=f"{subcat.name} ({items_count} вариантов)",
+            callback_data=f"pc_subcat_{subcat.id}_{category_id}"
         ))
     
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_group"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_subcategory"))
     
     await safe_edit_or_skip(callback,
-        f"🌆 <b>{group.name}</b>\n\nВыберите план съёмки:",
+        f"🌆 <b>{category.name}</b>\n\nВыберите подкатегорию:",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
 
 
-@router.callback_query(ProductCardStates.selecting_plan, F.data.startswith("pc_all_plans_"))
-async def select_all_plans_group(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(ProductCardStates.selecting_scene_subcategory, F.data.startswith("pc_all_subcats_"))
+async def select_all_subcats_category(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    group_id = int(callback.data.replace("pc_all_plans_", ""))
+    category_id = int(callback.data.replace("pc_all_subcats_", ""))
     
     async with async_session_maker() as session:
-        scene_repo = SceneRepository(session)
-        plans = await scene_repo.get_all_plans()
+        scene_repo = SceneCategoryRepository(session)
+        subcategories = await scene_repo.get_subcategories_by_category(category_id)
     
-    total_results = len(plans)
+    # Hisoblash: barcha subcategory ichidagi itemlar
+    total_results = 0
+    for subcat in subcategories:
+        items = await scene_repo.get_items_by_subcategory(subcat.id)
+        total_results += len(items)
+    
     cost = total_results * config_loader.pricing["product_card"]["per_result"]
     
     await state.update_data(
-        generation_type="group_all_plans",
-        selected_group=group_id,
+        generation_type="category_all_subcats",
+        selected_category=category_id,
         cost=cost,
         total_results=total_results
     )
@@ -318,31 +337,112 @@ async def select_all_plans_group(callback: CallbackQuery, state: FSMContext):
         if not has_balance:
             await safe_edit_or_skip(callback,
                 "❌ Недостаточно кредитов на балансе.\n\nПополните баланс в разделе 'Мой кабинет.'",
-                reply_markup=get_back_button("selecting_plan")
+                reply_markup=get_back_button_with_buy("selecting_scene_item")
             )
             return
     
     await state.set_state(ProductCardStates.confirming)
     await safe_edit_or_skip(callback,
-        f"Будет создано {total_results} изображений для всех планов группы.\nБудет списано {cost} кредитов.\n\nПродолжить?",
+        f"Будет создано {total_results} изображений для всех подкатегорий.\nБудет списано {cost} кредитов.\n\nПродолжить?",
         reply_markup=get_confirmation_keyboard(cost, back_data="confirming_group")
     )
 
 
-@router.callback_query(ProductCardStates.selecting_plan, F.data.startswith("pc_plan_"))
-async def select_plan(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(ProductCardStates.selecting_scene_subcategory, F.data.startswith("pc_subcat_"))
+async def select_subcategory(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
     parts = callback.data.split("_", 3)
-    plan_id = int(parts[2])
-    group_id = int(parts[3])
+    subcategory_id = int(parts[2])
+    category_id = int(parts[3])
+    
+    async with async_session_maker() as session:
+        scene_repo = SceneCategoryRepository(session)
+        subcategory = await scene_repo.get_subcategory(subcategory_id)
+        items = await scene_repo.get_items_by_subcategory(subcategory_id)
+    
+    if not items:
+        await safe_edit_or_skip(callback,
+            "❌ В этой подкатегории нет элементов!",
+            reply_markup=get_back_button("selecting_scene_item")
+        )
+        return
+    
+    await state.update_data(selected_subcategory=subcategory_id)
+    await state.set_state(ProductCardStates.selecting_scene_item)
+    
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="✅ Все элементы",
+        callback_data=f"pc_all_items_{subcategory_id}"
+    ))
+    
+    for item in items:
+        builder.row(InlineKeyboardButton(
+            text=item.name,
+            callback_data=f"pc_item_{item.id}_{subcategory_id}"
+        ))
+    
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_item"))
+    
+    await safe_edit_or_skip(callback,
+        f"📸 <b>{subcategory.name}</b>\n\nВыберите элемент:",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(ProductCardStates.selecting_scene_item, F.data.startswith("pc_all_items_"))
+async def select_all_items(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    subcategory_id = int(callback.data.replace("pc_all_items_", ""))
+    
+    async with async_session_maker() as session:
+        scene_repo = SceneCategoryRepository(session)
+        items = await scene_repo.get_items_by_subcategory(subcategory_id)
+    
+    total_results = len(items)
+    cost = total_results * config_loader.pricing["product_card"]["per_result"]
+    
+    await state.update_data(
+        generation_type="subcategory_all_items",
+        selected_subcategory=subcategory_id,
+        cost=cost,
+        total_results=total_results
+    )
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        has_balance = await user_repo.check_balance(callback.from_user.id, cost)
+        if not has_balance:
+            await safe_edit_or_skip(callback,
+                "❌ Недостаточно кредитов на балансе.\n\nПополните баланс в разделе 'Мой кабинет.'",
+                reply_markup=get_back_button_with_buy("selecting_scene_item")
+            )
+            return
+    
+    await state.set_state(ProductCardStates.confirming)
+    await safe_edit_or_skip(callback,
+        f"Будет создано {total_results} изображений.\nБудет списано {cost} кредитов.\n\nПродолжить?",
+        reply_markup=get_confirmation_keyboard(cost, back_data="confirming_group")
+    )
+
+
+@router.callback_query(ProductCardStates.selecting_scene_item, F.data.startswith("pc_item_"))
+async def select_item(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    parts = callback.data.split("_", 3)
+    item_id = int(parts[2])
+    subcategory_id = int(parts[3])
     
     cost = config_loader.pricing["product_card"]["per_result"]
     
     await state.update_data(
-        generation_type="single_plan",
-        selected_plan=plan_id,
-        selected_group=group_id,
+        generation_type="single_item",
+        selected_item=item_id,
+        selected_subcategory=subcategory_id,
         cost=cost,
         total_results=1
     )
@@ -353,17 +453,17 @@ async def select_plan(callback: CallbackQuery, state: FSMContext):
         if not has_balance:
             await safe_edit_or_skip(callback,
                 "❌ Недостаточно кредитов на балансе.\n\nПополните баланс в разделе 'Мой кабинет.'",
-                reply_markup=get_back_button("selecting_plan")
+                reply_markup=get_back_button_with_buy("selecting_scene_item")
             )
             return
         
-        scene_repo = SceneRepository(session)
-        group = await scene_repo.get_group(group_id)
-        plan = await scene_repo.get_plan(plan_id)
+        scene_repo = SceneCategoryRepository(session)
+        item = await scene_repo.get_item(item_id)
+        subcategory = await scene_repo.get_subcategory(subcategory_id)
     
     await state.set_state(ProductCardStates.confirming)
     await safe_edit_or_skip(callback,
-        f"Сцена: {group.name}\nПлан: {plan.name}\n\nБудет списано {cost} кредитов.\n\nПродолжить?",
+        f"Подкатегория: {subcategory.name}\nЭлемент: {item.name}\n\nБудет списано {cost} кредитов.\n\nПродолжить?",
         reply_markup=get_confirmation_keyboard(cost, back_data="confirming_single")
     )
 
@@ -387,57 +487,66 @@ async def confirm_product_card(callback: CallbackQuery, state: FSMContext):
         results = []
         
         async with async_session_maker() as session:
-            scene_repo = SceneRepository(session)
+            scene_repo = SceneCategoryRepository(session)
             
             if generation_type == "all_scenes":
-                # Все группы и все планы
-                groups = await scene_repo.get_all_groups()
-                plans = await scene_repo.get_all_plans()
+                # Barcha category -> subcategory -> items
+                hierarchy = await scene_repo.get_full_hierarchy()
                 
-                for group in groups:
-                    for plan in plans:
-                        prompts = await scene_repo.get_prompts_by_group_and_plan(group.id, plan.id)
-                        if prompts:
-                            # Берем первый промпт из группы
-                            prompt = prompts[0]
-                            print("PLAN PROMPT:", prompt.prompt)
-                            result = await kie_service.change_scene(photo_url, prompt.prompt)
-                            result["scene_name"] = group.name
-                            result["plan"] = plan.name
+                for cat_id, cat_data in hierarchy.items():
+                    for subcat_id, subcat_data in cat_data["subcategories"].items():
+                        for item in subcat_data["items"]:
+                            result = await kie_service.change_scene(photo_url, item["prompt"])
+                            result["category_name"] = cat_data["name"]
+                            result["subcategory_name"] = subcat_data["name"]
+                            result["item_name"] = item["name"]
                             results.append(result)
             
-            elif generation_type == "group_all_plans":
-                # Одна группа, все планы
-                group_id = int(data["selected_group"])
-                group = await scene_repo.get_group(group_id)
-                plans = await scene_repo.get_all_plans()
+            elif generation_type == "category_all_subcats":
+                # Bitta category, barcha subcategory -> items
+                category_id = int(data["selected_category"])
+                category = await scene_repo.get_category(category_id)
+                subcategories = await scene_repo.get_subcategories_by_category(category_id)
                 
-                for plan in plans:
-                    prompts = await scene_repo.get_prompts_by_group_and_plan(group_id, plan.id)
-                    if prompts:
-                        prompt = prompts[0]
-                        result = await kie_service.change_scene(photo_url, prompt.prompt)
-                        result["scene_name"] = group.name
-                        result["plan"] = plan.name
+                for subcat in subcategories:
+                    items = await scene_repo.get_items_by_subcategory(subcat.id)
+                    for item in items:
+                        result = await kie_service.change_scene(photo_url, item.prompt)
+                        result["category_name"] = category.name
+                        result["subcategory_name"] = subcat.name
+                        result["item_name"] = item.name
                         results.append(result)
             
-            elif generation_type == "single_plan":
-                group_id = int(data["selected_group"])
-                plan_id = int(data["selected_plan"])
-                group = await scene_repo.get_group(group_id)
-                plan = await scene_repo.get_plan(plan_id)
-                prompts = await scene_repo.get_prompts_by_group_and_plan(group_id, plan_id)
+            elif generation_type == "subcategory_all_items":
+                # Bitta subcategory, barcha items
+                subcategory_id = int(data["selected_subcategory"])
+                subcategory = await scene_repo.get_subcategory(subcategory_id)
+                category = await scene_repo.get_category(subcategory.category_id)
+                items = await scene_repo.get_items_by_subcategory(subcategory_id)
                 
-                if prompts:
-                    prompt = prompts[0]
-                    result = await kie_service.change_scene(photo_url, prompt.prompt)
-                    result["scene_name"] = group.name
-                    result["plan"] = plan.name
+                for item in items:
+                    result = await kie_service.change_scene(photo_url, item.prompt)
+                    result["category_name"] = category.name
+                    result["subcategory_name"] = subcategory.name
+                    result["item_name"] = item.name
                     results.append(result)
+            
+            elif generation_type == "single_item":
+                # Bitta item
+                item_id = int(data["selected_item"])
+                item = await scene_repo.get_item(item_id)
+                subcategory = await scene_repo.get_subcategory(item.subcategory_id)
+                category = await scene_repo.get_category(subcategory.category_id)
+                
+                result = await kie_service.change_scene(photo_url, item.prompt)
+                result["category_name"] = category.name
+                result["subcategory_name"] = subcategory.name
+                result["item_name"] = item.name
+                results.append(result)
         
         for i, result in enumerate(results, 1):
             if "image" in result:
-                caption = f"Сцена: {result.get('scene_name', 'N/A')} · План: {result.get('plan', 'N/A')}"
+                caption = f"{result.get('category_name', 'N/A')} · {result.get('subcategory_name', 'N/A')} · {result.get('item_name', 'N/A')}"
                 await callback.message.answer_photo(
                     BufferedInputFile(result["image"], filename=f"result_{i}.jpg"),
                     caption=caption
@@ -463,7 +572,8 @@ async def confirm_product_card(callback: CallbackQuery, state: FSMContext):
         "photo_url": photo_url,
         "cost": cost,
         "generation_type": generation_type,
-        "selected_group": data.get("selected_group"),
-        "selected_plan": data.get("selected_plan"),
+        "selected_category": data.get("selected_category"),
+        "selected_subcategory": data.get("selected_subcategory"),
+        "selected_item": data.get("selected_item"),
         "total_results": data.get("total_results")
     })

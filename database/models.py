@@ -58,6 +58,16 @@ class Task(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+class VideoScenario(Base):
+    __tablename__ = "video_scenarios"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    prompt: Mapped[str] = mapped_column(Text)
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
 
 class Payment(Base):
     __tablename__ = "payments"
@@ -93,16 +103,6 @@ class BotMessage(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-
-class ModelType(Base):
-    __tablename__ = "model_types"
-    
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255), unique=True)
-    prompt: Mapped[str] = mapped_column(Text)
-    order_index: Mapped[int] = mapped_column(Integer, default=0)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class PoseGroup(Base):
@@ -146,32 +146,89 @@ class PosePrompt(Base):
     subgroup: Mapped["PoseSubgroup"] = relationship("PoseSubgroup", back_populates="prompts")
 
 
-
-class SceneGroup(Base):
-    __tablename__ = "scene_groups"
+class ModelCategory(Base):
+    __tablename__ = "model_categories"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255))
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    plans: Mapped[List["ScenePlanPrompt"]] = relationship(
-        "ScenePlanPrompt", back_populates="group", cascade="all, delete-orphan"
+    
+    subcategories: Mapped[List["ModelSubcategory"]] = relationship(
+        "ModelSubcategory", back_populates="category", cascade="all, delete-orphan"
     )
 
 
-class ScenePlanPrompt(Base):
-    __tablename__ = "scene_plans"
+class ModelSubcategory(Base):
+    __tablename__ = "model_subcategories"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    group_id: Mapped[int] = mapped_column(Integer, ForeignKey("scene_groups.id"), nullable=False)
+    category_id: Mapped[int] = mapped_column(Integer, ForeignKey("model_categories.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255))
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    category: Mapped["ModelCategory"] = relationship("ModelCategory", back_populates="subcategories")
+    items: Mapped[List["ModelItem"]] = relationship("ModelItem", back_populates="subcategory", cascade="all, delete-orphan")
+
+
+class ModelItem(Base):
+    __tablename__ = "model_items"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    subcategory_id: Mapped[int] = mapped_column(Integer, ForeignKey("model_subcategories.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    prompt: Mapped[str] = mapped_column(Text)  
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    subcategory: Mapped["ModelSubcategory"] = relationship("ModelSubcategory", back_populates="items")
+
+
+class SceneCategory(Base):
+    __tablename__ = "scene_categories"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255))  # Masalan: "Interer", "Ekster"
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    subcategories: Mapped[List["SceneSubcategory"]] = relationship(
+        "SceneSubcategory", back_populates="category", cascade="all, delete-orphan"
+    )
+
+
+class SceneSubcategory(Base):
+    __tablename__ = "scene_subcategories"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    category_id: Mapped[int] = mapped_column(Integer, ForeignKey("scene_categories.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))  # Masalan: "Boutik", "Kafe"
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    category: Mapped["SceneCategory"] = relationship("SceneCategory", back_populates="subcategories")
+    items: Mapped[List["SceneItem"]] = relationship("SceneItem", back_populates="subcategory", cascade="all, delete-orphan")
+
+
+class SceneItem(Base):
+    __tablename__ = "scene_items"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    subcategory_id: Mapped[int] = mapped_column(Integer, ForeignKey("scene_subcategories.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))  # Masalan: "Dalniy plan", "Sredniy plan"
     prompt: Mapped[str] = mapped_column(Text)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    subcategory: Mapped["SceneSubcategory"] = relationship("SceneSubcategory", back_populates="items")
 
-    group: Mapped[SceneGroup] = relationship("SceneGroup", back_populates="plans")
 
 
 

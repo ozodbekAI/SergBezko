@@ -1,7 +1,0 @@
-video_scenarios:
-  - id: around
-    name: Камера вокруг
-    prompt: "Camera rotates around the subject smoothly"
-  - id: zoom
-    name: Плавный зум
-    prompt: "Smooth zoom in on the subject"

@@ -2,10 +2,7 @@ from aiogram import F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List
-from database.models import SceneGroup, ScenePlanPrompt
 from database.repositories import UserRepository
-
-
 
 
 
@@ -17,6 +14,18 @@ def get_back_button_normalize(current_step: str):
     ))
     return builder.as_markup()
 
+
+def get_back_button_normalize_with_buy(current_step: str):
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="💳 Пополнить баланс", 
+        callback_data="cabinet_balance"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="◀️ Назад", 
+        callback_data=f"norm_back_{current_step}"
+    ))
+    return builder.as_markup()
 
 def get_back_button_photo(current_step: str):
     builder = InlineKeyboardBuilder()
@@ -48,6 +57,12 @@ def get_back_button_product_card(current_step: str):
 
 def get_back_to_generation():
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 В меню генерации", callback_data="back_to_generations")]
+    ])
+
+def get_back_to_generation_with_buy():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Пополнить баланс", callback_data="cabinet_balance")],
         [InlineKeyboardButton(text="🔙 В меню генерации", callback_data="back_to_generations")]
     ])
 

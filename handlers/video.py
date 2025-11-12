@@ -9,10 +9,11 @@ from keyboards import (get_back_button_video, get_video_menu, get_video_scenario
                        get_confirmation_keyboard, get_repeat_button, get_back_to_generation, get_generation_menu)
 from database import async_session_maker
 from database.repositories import UserRepository
+from database.repositories import VideoScenarioRepository   # <-- YANGI
 from services.config_loader import config_loader
 from services.kie_service import kie_service
 from services.translator import translator_service
-from utils.photo import get_photo_url_from_message  # YANGI
+from utils.photo import get_photo_url_from_message
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -71,19 +72,15 @@ async def video_mode_selected(callback: CallbackQuery, state: FSMContext):
 
 
 def get_back_button(current_step: str):
-    """VIDEO MODULI ICHIDA"""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"video_back_{current_step}"))
     return builder.as_markup()
 
 
-# YANGILANGAN: photo VA document qabul qiladi
 @router.message(VideoStates.waiting_for_photo, F.photo | F.document)
 async def video_photo_received(message: Message, state: FSMContext):
     try:
-        # Photo yoki document dan URL olish
         photo_url = await get_photo_url_from_message(message)
-        
     except ValueError as e:
         await message.answer(str(e), reply_markup=get_back_button("gen_video"))
         return
@@ -98,9 +95,16 @@ async def video_photo_received(message: Message, state: FSMContext):
     nav_stack.append("waiting_for_photo")
     await state.update_data(nav_stack=nav_stack, photo_url=photo_url)
     await state.set_state(VideoStates.selecting_scenario)
-    scenarios = config_loader.video_scenarios.get("video_scenarios", [])
-    await message.answer("Выберите сценарий движения камеры или введите свой промпт:", reply_markup=get_video_scenarios(scenarios))
 
+    async with async_session_maker() as session:
+        vs_repo = VideoScenarioRepository(session)
+        scenarios_db = await vs_repo.get_all()
+        scenarios = [{"id": s.id, "name": s.name} for s in scenarios_db]
+
+    await message.answer(
+        "Выберите сценарий движения камеры или введите свой промпт:",
+        reply_markup=get_video_scenarios(scenarios)
+    )
 
 @router.message(VideoStates.waiting_for_photo)
 async def video_invalid_input(message: Message, state: FSMContext):
@@ -158,31 +162,35 @@ async def back_navigation_video(callback: CallbackQuery, state: FSMContext):
         data = await state.get_data()
         mode = data.get("mode", "balance")
         video_config = config_loader.pricing["video"][mode]
-        
+
         await state.set_state(VideoStates.waiting_for_photo)
-        
+
         mode_names = {
             "balance": "⚖️ Баланс — Grok",
             "pro_6": "⭐ Про 6 сек — hailuo 768p",
             "pro_10": "⭐⭐ Про 10 сек — hailuo 768p",
             "super_6": "⭐⭐⭐ Супер Про 6 сек — hailuo 1080p"
         }
-        
+
         await safe_edit_text(callback,
             f"📸 Отправьте одно фото для генерации видео.\n\nРежим: {mode_names.get(mode)}\nСтоимость: {video_config['cost']} кредитов\n\n✨ Можно отправить как фото или как файл",
             reply_markup=get_back_button_video("waiting_for_photo")
         )
         return
-    
+
     if back_data in ["video_custom_prompt", "back_video_custom_prompt"]:
         await state.set_state(VideoStates.selecting_scenario)
-        scenarios = config_loader.video_scenarios.get("video_scenarios", [])
+
+        async with async_session_maker() as session:
+            vs_repo = VideoScenarioRepository(session)
+            scenarios_db = await vs_repo.get_all()
+            scenarios = [{"id": s.id, "name": s.name} for s in scenarios_db]
+
         await safe_edit_text(callback,
             "Выберите сценарий движения камеры или введите свой промпт:",
             reply_markup=get_video_scenarios(scenarios)
         )
         return
-
 
 @router.callback_query(VideoStates.selecting_scenario, F.data.startswith("video_scenario_"))
 async def video_scenario_selected(callback: CallbackQuery, state: FSMContext):
@@ -191,18 +199,29 @@ async def video_scenario_selected(callback: CallbackQuery, state: FSMContext):
     nav_stack = data.get("nav_stack", [])
     nav_stack.append("selecting_scenario") 
     await state.update_data(nav_stack=nav_stack)
-    scenario_id = callback.data.replace("video_scenario_", "")
-    scenario = config_loader.get_video_scenario_by_id(scenario_id)
-    cost = data["cost"]
-    await state.update_data(prompt=scenario["prompt"], scenario_name=scenario["name"])
+
+    scenario_id = int(callback.data.replace("video_scenario_", ""))
+
     async with async_session_maker() as session:
+        vs_repo = VideoScenarioRepository(session)
+        scenario = await vs_repo.get_by_id(scenario_id)
+        if not scenario or not scenario.is_active:
+            await callback.message.edit_text("❌ Этот сценарий недоступен. Выберите другой.", reply_markup=get_back_button("waiting_for_photo"))
+            return
+
+        cost = data["cost"]
         user_repo = UserRepository(session)
         has_balance = await user_repo.check_balance(callback.from_user.id, cost)
         if not has_balance:
             await callback.message.edit_text("❌ Недостаточно кредитов на балансе.\n\nПополните баланс в разделе 'Мой кабинет.'", reply_markup=get_back_button("waiting_for_photo"))
             await state.clear()
             return
-    await callback.message.edit_text(f"Сценарий: {scenario['name']}\nБудет списано {cost} кредитов.\n\nПродолжить?", reply_markup=get_confirmation_keyboard(cost, "back_selecting_scenario"))
+
+    await state.update_data(prompt=scenario.prompt, scenario_name=scenario.name)
+    await callback.message.edit_text(
+        f"Сценарий: {scenario.name}\nБудет списано {cost} кредитов.\n\nПродолжить?",
+        reply_markup=get_confirmation_keyboard(cost, "back_selecting_scenario")
+    )
     await state.set_state(VideoStates.confirming)
 
 

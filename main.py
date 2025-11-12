@@ -7,7 +7,7 @@ from aiogram.enums import ParseMode
 from config import settings
 from database import engine
 from database.models import Base
-from handlers import admin_poses, admin_scenes, start, product_card, normalize, video, photo, cabinet , common, admin, repeat_handler, admin_model_type
+from handlers import admin_poses, admin_scene, start, product_card, normalize, video, photo, cabinet , common, admin, repeat_handler, admin_model_type
 from middlewares.middlewares import BanCheckMiddleware 
 
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +44,7 @@ async def main():
     dp.include_router(cabinet.router)
     dp.include_router(admin.router)
     dp.include_router(admin_poses.router)
-    dp.include_router(admin_scenes.router)
+    dp.include_router(admin_scene.router)
     dp.include_router(admin_model_type.router)
     logger.info("Bot started")
     try:

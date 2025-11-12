@@ -3,14 +3,17 @@ from aiogram.fsm.state import State, StatesGroup
 
 class ProductCardStates(StatesGroup):
     waiting_for_photo = State()
-    selecting_scene = State()
-    selecting_plan = State()  
+    selecting_scene_category = State()
+    selecting_scene_subcategory = State()
+    selecting_scene_item = State()
     confirming = State()
 
 
 class NormalizeStates(StatesGroup):
     waiting_for_photos = State()
-    selecting_model_type = State()
+    selecting_model_category = State()
+    selecting_model_subcategory = State()
+    selecting_model_item = State()
     confirming = State()
 
 
@@ -22,48 +25,62 @@ class VideoStates(StatesGroup):
 
 
 class PhotoStates(StatesGroup):
-    waiting_for_photo = State()       
-    selecting_group = State()            
-    selecting_subgroup = State()         
-    selecting_plan = State()             
-    selecting_prompt = State()           
-    entering_custom_prompt = State()     
-    confirming = State()                
+    waiting_for_photo = State()
+    
+    # Scene uchun
+    selecting_scene_category = State()
+    selecting_scene_subcategory = State()
+    selecting_scene_item = State()
+    
+    # Pose uchun  
+    selecting_pose_group = State()
+    selecting_pose_subgroup = State()
+    selecting_pose_prompt = State()
+    
+    # Custom
+    entering_custom_prompt = State()
+    confirming = State()
 
 
-class AdminModelTypeStates(StatesGroup):
-    entering_name = State()
-    entering_prompt = State()
+# ===== ADMIN STATES =====
+
+class AdminModelCategoryStates(StatesGroup):
+    entering_category_name = State()
+    selecting_category = State()
+    entering_subcategory_name = State()
+    selecting_subcategory = State()
+    entering_item_name = State()
+    entering_item_prompt = State()
+    editing_item_name = State()         # добавлено
+    editing_item_prompt = State()
 
 
 class AdminPoseStates(StatesGroup):
-    # Poza qo'shish
-    selecting_group = State()        
-    entering_group_id = State()        
-    entering_group_name = State()      
+    # Group (Category)
+    entering_group_name = State()
     
-    selecting_subgroup = State()       
-    entering_subgroup_id = State()     
-    entering_subgroup_name = State()   
+    # Subgroup (Subcategory)
+    selecting_group = State()
+    entering_subgroup_name = State()
     
-    entering_prompt_name = State()     
-    entering_prompt_text = State()    
+    # Prompt (Item)
+    selecting_subgroup = State()
+    entering_prompt_name = State()
+    entering_prompt_text = State()
     
-    # O'chirish
-    deleting_group = State()
-    deleting_subgroup = State()
-    deleting_prompt = State()
-    
-    # Tahrirlash
-    editing_prompt = State()
+    # Edit
     editing_prompt_text = State()
 
 
-class AdminSceneStates(StatesGroup):
-    entering_group_name = State()         
-    entering_plan_prompt = State()          
-    adding_default_plans = State()          
-
+class AdminSceneCategoryStates(StatesGroup):
+    entering_category_name = State()
+    selecting_category = State()
+    entering_subcategory_name = State()
+    selecting_subcategory = State()
+    entering_item_name = State()
+    entering_item_prompt = State()
+    editing_item_name = State()         # добавлено
+    editing_item_prompt = State()
 
 class AdminMessageStates(StatesGroup):
     entering_text = State()
