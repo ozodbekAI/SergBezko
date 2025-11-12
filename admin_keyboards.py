@@ -495,3 +495,19 @@ def get_confirm_delete_keyboard_video(scenario_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="❌ Отмена", callback_data=f"vidsc_view_{scenario_id}")
     )
     return b.as_markup()
+
+def kb_back_to_admin_video_main() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="◀️ В админ видео-меню", callback_data="admin_video_scenarios"))
+    return b.as_markup()
+
+def kb_back_to_edit_menu(scenario_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"vidsc_view_{scenario_id}"))
+    return b.as_markup()
+
+def kb_add_flow_back_cancel() -> InlineKeyboardMarkup:
+    # Qo'shish jarayonida umumiy "Отмена" tugmasi
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="❌ Отмена", callback_data="vidsc_add_cancel"))
+    return b.as_markup()
