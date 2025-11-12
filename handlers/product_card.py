@@ -5,15 +5,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
 from states import ProductCardStates
-from keyboards import (get_back_button_product_card, get_product_card_plans, get_scene_plans,
-                       get_scene_groups_pc, get_scenes_in_group_pc, 
-                       get_confirmation_keyboard_product_card, 
+from keyboards import (get_back_button_product_card, get_confirmation_keyboard_product_card, 
                        get_repeat_button, get_back_to_generation, get_generation_menu)
 from database import async_session_maker
-from database.repositories import UserRepository
+from database.repositories import UserRepository, SceneRepository
 from services.config_loader import config_loader
 from services.kie_service import kie_service
-from utils.photo import get_photo_url_from_message  # YANGI
+from utils.photo import get_photo_url_from_message
 from config import settings
 import logging
 
@@ -41,7 +39,7 @@ def get_confirmation_keyboard(cost: int, back_data: str = "gen_product_card"):
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
         text=f"✅ Подтвердить ({cost} кредитов)", 
-        callback_data="confirm_product_card"
+        callback_data="pc_confirm_generation"
     ))
     builder.row(InlineKeyboardButton(
         text="❌ Отмена", 
@@ -61,7 +59,6 @@ async def product_card_start(callback: CallbackQuery, state: FSMContext):
     )
 
 
-# YANGILANGAN: photo VA document qabul qiladi
 @router.message(ProductCardStates.waiting_for_photo, F.photo | F.document)
 async def product_card_photo_received(message: Message, state: FSMContext):
     if message.media_group_id:
@@ -70,9 +67,7 @@ async def product_card_photo_received(message: Message, state: FSMContext):
         return
     
     try:
-        # Photo yoki document dan URL olish
         photo_url = await get_photo_url_from_message(message)
-        
     except ValueError as e:
         await message.answer(str(e), reply_markup=get_back_button("gen_product_card"))
         return
@@ -139,51 +134,69 @@ async def back_navigation_product_card(callback: CallbackQuery, state: FSMContex
         return
     
     if back_data == "selecting_scene_group":
-        groups = config_loader.get_scene_groups()
+        async with async_session_maker() as session:
+            scene_repo = SceneRepository(session)
+            groups = await scene_repo.get_all_groups()
+        
         await state.set_state(ProductCardStates.selecting_scene)
+        
+        builder = InlineKeyboardBuilder()
+        for group in groups:
+            builder.row(InlineKeyboardButton(
+                text=group.name,
+                callback_data=f"pc_scene_group_{group.id}"
+            ))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_groups"))
+        
         await safe_edit_or_skip(callback,
             "Выберите группу сцен:",
-            reply_markup=get_scene_groups_pc(groups)
-        )
-        return
-    
-    if back_data == "selecting_scene":
-        groups = config_loader.get_scene_groups()
-        await state.set_state(ProductCardStates.selecting_scene)
-        await safe_edit_or_skip(callback,
-            "Выберите группу сцен:",
-            reply_markup=get_scene_groups_pc(groups)
+            reply_markup=builder.as_markup()
         )
         return
     
     if back_data == "selecting_plan":
         data = await state.get_data()
-        group_id = data.get("selected_group", "")
-        scenes = config_loader.get_scenes_by_group(group_id)
-        await state.set_state(ProductCardStates.selecting_scene)
-        await safe_edit_or_skip(callback,
-            "Выберите сцену или создайте все:",
-            reply_markup=get_scenes_in_group_pc(scenes, group_id)
-        )
-        return
-    
-    if back_data == "confirming_single":
+        group_id = int(data.get("selected_group", 0))
+        
+        async with async_session_maker() as session:
+            scene_repo = SceneRepository(session)
+            group = await scene_repo.get_group(group_id)
+            plans = await scene_repo.get_all_plans()
+        
         await state.set_state(ProductCardStates.selecting_plan)
+        
+        builder = InlineKeyboardBuilder()
+        
+        builder.row(InlineKeyboardButton(
+            text="✅ Все планы группы",
+            callback_data=f"pc_all_plans_{group_id}"
+        ))
+        
+        for plan in plans:
+            prompts = await scene_repo.get_prompts_by_group_and_plan(group_id, plan.id)
+            prompts_count = len(prompts)
+            
+            builder.row(InlineKeyboardButton(
+                text=f"{plan.name} ({prompts_count} вариантов)",
+                callback_data=f"pc_plan_{plan.id}_{group_id}"
+            ))
+        
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_group"))
+        
         await safe_edit_or_skip(callback,
-            "Выберите план съёмки:",
-            reply_markup=get_scene_plans()
+            f"🌆 <b>{group.name}</b>\n\nВыберите план съёмки:",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
         )
         return
     
-    if back_data == "confirming_group":
-        data = await state.get_data()
-        group_id = data.get("selected_group", "")
-        scenes = config_loader.get_scenes_by_group(group_id)
+    if back_data in ["confirming_single", "confirming_group", "confirming_all"]:
         await state.set_state(ProductCardStates.selecting_scene)
-        await safe_edit_or_skip(callback,
-            "Выберите сцену или создайте все:",
-            reply_markup=get_scenes_in_group_pc(scenes, group_id)
-        )
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="📋 Все сцены", callback_data="pc_all_scenes"))
+        builder.row(InlineKeyboardButton(text="🎯 Выбрать сцену", callback_data="pc_select_scene"))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_waiting_for_photo"))
+        await safe_edit_or_skip(callback, "Выберите вариант:", reply_markup=builder.as_markup())
         return
 
 
@@ -191,11 +204,19 @@ async def back_navigation_product_card(callback: CallbackQuery, state: FSMContex
 async def product_card_all_scenes(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     
-    scenes = config_loader.scenes.get("scenes", [])
-    plans = ["far", "medium", "close"]
-    total_results = len(scenes) * len(plans)
+    async with async_session_maker() as session:
+        scene_repo = SceneRepository(session)
+        groups = await scene_repo.get_all_groups()
+        plans = await scene_repo.get_all_plans()
+    
+    total_results = len(groups) * len(plans)
     cost = total_results * config_loader.pricing["product_card"]["per_result"]
-    await state.update_data(generation_type="all_scenes", cost=cost, total_results=total_results)
+    
+    await state.update_data(
+        generation_type="all_scenes", 
+        cost=cost, 
+        total_results=total_results
+    )
     
     async with async_session_maker() as session:
         user_repo = UserRepository(session)
@@ -210,74 +231,86 @@ async def product_card_all_scenes(callback: CallbackQuery, state: FSMContext):
     await state.set_state(ProductCardStates.confirming)
     await safe_edit_or_skip(callback,
         f"Будет создано {total_results} изображений.\nБудет списано {cost} кредитов.\n\nПродолжить?",
-        reply_markup=get_confirmation_keyboard(cost, back_data="pc_all_scenes")
+        reply_markup=get_confirmation_keyboard(cost, back_data="confirming_all")
     )
 
 
 @router.callback_query(ProductCardStates.selecting_scene, F.data == "pc_select_scene")
 async def product_card_select_scene(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    groups = config_loader.get_scene_groups()
-    await safe_edit_or_skip(callback, "Выберите группу сцен:", reply_markup=get_scene_groups_pc(groups))
+    
+    async with async_session_maker() as session:
+        scene_repo = SceneRepository(session)
+        groups = await scene_repo.get_all_groups()
+    
+    builder = InlineKeyboardBuilder()
+    for group in groups:
+        builder.row(InlineKeyboardButton(
+            text=group.name,
+            callback_data=f"pc_scene_group_{group.id}"
+        ))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_groups"))
+    
+    await safe_edit_or_skip(callback, "Выберите группу сцен:", reply_markup=builder.as_markup())
 
 
 @router.callback_query(ProductCardStates.selecting_scene, F.data.startswith("pc_scene_group_"))
 async def select_scene_group(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    group_id = callback.data.replace("pc_scene_group_", "")
+    group_id = int(callback.data.replace("pc_scene_group_", ""))
+    
     await state.update_data(selected_group=group_id)
-    scenes = config_loader.get_scenes_by_group(group_id)
+    
+    async with async_session_maker() as session:
+        scene_repo = SceneRepository(session)
+        group = await scene_repo.get_group(group_id)
+        plans = await scene_repo.get_all_plans()
+    
+    await state.set_state(ProductCardStates.selecting_plan)
+    
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(InlineKeyboardButton(
+        text="✅ Все планы группы",
+        callback_data=f"pc_all_plans_{group_id}"
+    ))
+
+    for plan in plans:
+        prompts = await scene_repo.get_prompts_by_group_and_plan(group_id, plan.id)
+        prompts_count = len(prompts)
+        
+        builder.row(InlineKeyboardButton(
+            text=f"{plan.name} ({prompts_count} вариантов)",
+            callback_data=f"pc_plan_{plan.id}_{group_id}"
+        ))
+    
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="pc_back_selecting_scene_group"))
+    
     await safe_edit_or_skip(callback,
-        "Выберите сцену или создайте все:",
-        reply_markup=get_scenes_in_group_pc(scenes, group_id)
+        f"🌆 <b>{group.name}</b>\n\nВыберите план съёмки:",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
     )
 
 
-@router.callback_query(ProductCardStates.selecting_scene, F.data.startswith("pc_scene_"))
-async def select_specific_scene(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(ProductCardStates.selecting_plan, F.data.startswith("pc_all_plans_"))
+async def select_all_plans_group(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    group_id = int(callback.data.replace("pc_all_plans_", ""))
     
-    if callback.data.startswith("pc_scene_all_"):
-        group_id = callback.data.replace("pc_scene_all_", "")
-        scenes = config_loader.get_scenes_by_group(group_id)
-        plans = ["far", "medium", "close"]
-        total_results = len(scenes) * len(plans)
-        cost = total_results * config_loader.pricing["product_card"]["per_result"]
-        await state.update_data(generation_type="group_scenes", selected_group=group_id, cost=cost, total_results=total_results)
-        
-        async with async_session_maker() as session:
-            user_repo = UserRepository(session)
-            has_balance = await user_repo.check_balance(callback.from_user.id, cost)
-            if not has_balance:
-                await safe_edit_or_skip(callback,
-                    "❌ Недостаточно кредитов на балансе.\n\nПополните баланс в разделе 'Мой кабинет.'",
-                    reply_markup=get_back_button("selecting_scene_group")
-                )
-                return
-        
-        await state.set_state(ProductCardStates.confirming)
-        await safe_edit_or_skip(callback,
-            f"Будет создано {total_results} изображений для группы.\nБудет списано {cost} кредитов.\n\nПродолжить?",
-            reply_markup=get_confirmation_keyboard(cost, back_data="selecting_scene_group")
-        )
-        return
+    async with async_session_maker() as session:
+        scene_repo = SceneRepository(session)
+        plans = await scene_repo.get_all_plans()
     
-    scene_id = callback.data.replace("pc_scene_", "")
-    scene = config_loader.get_scene_by_id(scene_id)
-    await state.update_data(selected_scene=scene_id)
-    await state.set_state(ProductCardStates.selecting_plan)
-    await safe_edit_or_skip(callback, "Выберите план съёмки:", reply_markup=get_scene_plans())
-
-
-@router.callback_query(ProductCardStates.selecting_plan, F.data.startswith("plan_"))
-async def select_plan(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    plan = callback.data.split("_")[-1]
-    cost = config_loader.pricing["product_card"]["per_result"]
-    data = await state.get_data()
-    await state.update_data(generation_type="single_scene", selected_plan=plan, cost=cost, total_results=1)
-    scene = config_loader.get_scene_by_id(data["selected_scene"])
-    plan_names = {"far": "Дальний", "medium": "Средний", "close": "Крупный"}
+    total_results = len(plans)
+    cost = total_results * config_loader.pricing["product_card"]["per_result"]
+    
+    await state.update_data(
+        generation_type="group_all_plans",
+        selected_group=group_id,
+        cost=cost,
+        total_results=total_results
+    )
     
     async with async_session_maker() as session:
         user_repo = UserRepository(session)
@@ -291,19 +324,58 @@ async def select_plan(callback: CallbackQuery, state: FSMContext):
     
     await state.set_state(ProductCardStates.confirming)
     await safe_edit_or_skip(callback,
-        f"Сцена: {scene['name']}\nПлан: {plan_names[plan]}\n\nБудет списано {cost} кредитов.\n\nПродолжить?",
-        reply_markup=get_confirmation_keyboard(cost, back_data="selecting_plan")
+        f"Будет создано {total_results} изображений для всех планов группы.\nБудет списано {cost} кредитов.\n\nПродолжить?",
+        reply_markup=get_confirmation_keyboard(cost, back_data="confirming_group")
     )
 
 
-@router.callback_query(ProductCardStates.confirming, F.data.startswith("confirm_"))
+@router.callback_query(ProductCardStates.selecting_plan, F.data.startswith("pc_plan_"))
+async def select_plan(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    
+    parts = callback.data.split("_", 3)
+    plan_id = int(parts[2])
+    group_id = int(parts[3])
+    
+    cost = config_loader.pricing["product_card"]["per_result"]
+    
+    await state.update_data(
+        generation_type="single_plan",
+        selected_plan=plan_id,
+        selected_group=group_id,
+        cost=cost,
+        total_results=1
+    )
+    
+    async with async_session_maker() as session:
+        user_repo = UserRepository(session)
+        has_balance = await user_repo.check_balance(callback.from_user.id, cost)
+        if not has_balance:
+            await safe_edit_or_skip(callback,
+                "❌ Недостаточно кредитов на балансе.\n\nПополните баланс в разделе 'Мой кабинет.'",
+                reply_markup=get_back_button("selecting_plan")
+            )
+            return
+        
+        scene_repo = SceneRepository(session)
+        group = await scene_repo.get_group(group_id)
+        plan = await scene_repo.get_plan(plan_id)
+    
+    await state.set_state(ProductCardStates.confirming)
+    await safe_edit_or_skip(callback,
+        f"Сцена: {group.name}\nПлан: {plan.name}\n\nБудет списано {cost} кредитов.\n\nПродолжить?",
+        reply_markup=get_confirmation_keyboard(cost, back_data="confirming_single")
+    )
+
+
+@router.callback_query(ProductCardStates.confirming, F.data == "pc_confirm_generation")
 async def confirm_product_card(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
     photo_url = data["photo_url"]
     cost = data["cost"]
+    generation_type = data["generation_type"]
 
-    
     async with async_session_maker() as session:
         user_repo = UserRepository(session)
         await user_repo.update_balance(callback.from_user.id, -cost)
@@ -312,28 +384,86 @@ async def confirm_product_card(callback: CallbackQuery, state: FSMContext):
     await safe_edit_or_skip(callback, "⏳ Генерация началась...")
     
     try:
-        data["photo_url"] = photo_url
-        results = await kie_service.generate_product_cards(data)
+        results = []
+        
+        async with async_session_maker() as session:
+            scene_repo = SceneRepository(session)
+            
+            if generation_type == "all_scenes":
+                # Все группы и все планы
+                groups = await scene_repo.get_all_groups()
+                plans = await scene_repo.get_all_plans()
+                
+                for group in groups:
+                    for plan in plans:
+                        prompts = await scene_repo.get_prompts_by_group_and_plan(group.id, plan.id)
+                        if prompts:
+                            # Берем первый промпт из группы
+                            prompt = prompts[0]
+                            print("PLAN PROMPT:", prompt.prompt)
+                            result = await kie_service.change_scene(photo_url, prompt.prompt)
+                            result["scene_name"] = group.name
+                            result["plan"] = plan.name
+                            results.append(result)
+            
+            elif generation_type == "group_all_plans":
+                # Одна группа, все планы
+                group_id = int(data["selected_group"])
+                group = await scene_repo.get_group(group_id)
+                plans = await scene_repo.get_all_plans()
+                
+                for plan in plans:
+                    prompts = await scene_repo.get_prompts_by_group_and_plan(group_id, plan.id)
+                    if prompts:
+                        prompt = prompts[0]
+                        result = await kie_service.change_scene(photo_url, prompt.prompt)
+                        result["scene_name"] = group.name
+                        result["plan"] = plan.name
+                        results.append(result)
+            
+            elif generation_type == "single_plan":
+                group_id = int(data["selected_group"])
+                plan_id = int(data["selected_plan"])
+                group = await scene_repo.get_group(group_id)
+                plan = await scene_repo.get_plan(plan_id)
+                prompts = await scene_repo.get_prompts_by_group_and_plan(group_id, plan_id)
+                
+                if prompts:
+                    prompt = prompts[0]
+                    result = await kie_service.change_scene(photo_url, prompt.prompt)
+                    result["scene_name"] = group.name
+                    result["plan"] = plan.name
+                    results.append(result)
+        
         for i, result in enumerate(results, 1):
             if "image" in result:
                 caption = f"Сцена: {result.get('scene_name', 'N/A')} · План: {result.get('plan', 'N/A')}"
-                await callback.message.answer_photo(BufferedInputFile(result["image"], filename=f"result_{i}.jpg"), caption=caption)
-        await callback.message.answer(f"✅ Генерация завершена!\n\nПотрачено: {cost} кредитов\nБаланс: {user.balance} кредитов", reply_markup=get_repeat_button())
+                await callback.message.answer_photo(
+                    BufferedInputFile(result["image"], filename=f"result_{i}.jpg"),
+                    caption=caption
+                )
+        
+        await callback.message.answer(
+            f"✅ Генерация завершена!\n\nПотрачено: {cost} кредитов\nБаланс: {user.balance} кредитов",
+            reply_markup=get_repeat_button()
+        )
     except Exception as e:
-        logger.error(f"Product card generation error: {e}")
+        logger.error(f"Product card generation error: {e}", exc_info=True)
         async with async_session_maker() as session:
             user_repo = UserRepository(session)
             await user_repo.update_balance(callback.from_user.id, cost)
-        await callback.message.answer(f"❌ Ошибка при генерации: {str(e)}\n\nКредиты возвращены на баланс.", reply_markup=get_back_to_generation())
+        await callback.message.answer(
+            f"❌ Ошибка при генерации: {str(e)}\n\nКредиты возвращены на баланс.",
+            reply_markup=get_back_to_generation()
+        )
     
     await state.clear()
     await state.update_data(last_generation={
         "type": "product_card",
         "photo_url": photo_url,
         "cost": cost,
-        "generation_type": data.get("generation_type"),
-        "selected_scene": data.get("selected_scene"),
-        "selected_plan": data.get("selected_plan"),
+        "generation_type": generation_type,
         "selected_group": data.get("selected_group"),
+        "selected_plan": data.get("selected_plan"),
         "total_results": data.get("total_results")
     })

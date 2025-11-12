@@ -7,15 +7,154 @@ def get_admin_main_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="👥 Управление пользователями", callback_data="admin_users"))
     builder.row(InlineKeyboardButton(text="📝 Изменить сообщения", callback_data="admin_messages"))
+    builder.row(InlineKeyboardButton(text="👤 Типы моделей", callback_data="admin_model_types"))
     builder.row(InlineKeyboardButton(text="🤸 Управление позами", callback_data="admin_poses"))
     builder.row(InlineKeyboardButton(text="🌆 Управление сценами", callback_data="admin_scenes"))
-    builder.row(InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"))  
+    builder.row(InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main"))
     return builder.as_markup()
 
 
+def get_scene_main_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="➕ Добавить локацию", callback_data="scene_add_location"))
+    builder.row(InlineKeyboardButton(text="✏️ Редактировать промпт", callback_data="scene_edit_prompt_menu"))
+    builder.row(InlineKeyboardButton(text="🗑 Удалить промпт", callback_data="scene_delete_prompt_menu"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_back"))
+    return builder.as_markup()
+
+
+def get_scene_groups_admin_list(groups: List, action: str = "view") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    for group in groups:
+        if action == "edit":
+            callback = f"scene_admin_edit_group_{group.id}"
+        elif action == "delete":
+            callback = f"scene_admin_delete_group_{group.id}"
+        else:
+            callback = f"scene_admin_view_group_{group.id}"
+        
+        builder.row(InlineKeyboardButton(text=group.name, callback_data=callback))
+    
+    if action == "edit":
+        back_callback = "scene_edit_prompt_menu"
+    elif action == "delete":
+        back_callback = "scene_delete_prompt_menu"
+    else:
+        back_callback = "admin_scenes"
+    
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=back_callback))
+    return builder.as_markup()
+
+
+def get_scene_plans_admin_list(plans: List, group_id: int, action: str = "edit") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    for plan in plans:
+        if action == "edit":
+            callback = f"scene_admin_edit_plan_{plan.id}"
+        elif action == "delete":
+            callback = f"scene_admin_delete_plan_{plan.id}"
+        else:
+            callback = f"scene_admin_view_plan_{plan.id}"
+        
+        builder.row(InlineKeyboardButton(text=plan.name, callback_data=callback))
+    
+    if action == "edit":
+        back_callback = "scene_edit_prompt_menu"
+    elif action == "delete":
+        back_callback = "scene_delete_prompt_menu"
+    else:
+        back_callback = "admin_scenes"
+    
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=back_callback))
+    return builder.as_markup()
+
+
+def get_pose_main_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="➕ Добавить группу", callback_data="pose_add_main_group"))
+    builder.row(InlineKeyboardButton(text="➕ Добавить подгруппу", callback_data="pose_add_main_subgroup"))
+    builder.row(InlineKeyboardButton(text="➕ Добавить промпт", callback_data="pose_add_main_prompt"))
+    builder.row(InlineKeyboardButton(text="✏️ Редактировать", callback_data="pose_edit_main_menu"))
+    builder.row(InlineKeyboardButton(text="🗑 Удалить", callback_data="pose_delete_main_menu"))
+    builder.row(InlineKeyboardButton(text="◀️ В админ панель", callback_data="admin_back"))
+    return builder.as_markup()
+
+
+def get_pose_groups_admin_list(groups: List, action: str = "view") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    for group in groups:
+        if action == "add_subgroup":
+            callback = f"pose_admin_add_subgroup_group_{group.id}"
+        elif action == "add_prompt":
+            callback = f"pose_admin_add_prompt_group_{group.id}"
+        elif action == "edit":
+            callback = f"pose_admin_edit_group_{group.id}"
+        elif action == "delete":
+            callback = f"pose_admin_delete_group_{group.id}"
+        else:
+            callback = f"pose_admin_view_group_{group.id}"
+        
+        builder.row(InlineKeyboardButton(text=f"{group.name}", callback_data=callback))
+    
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_poses"))
+    return builder.as_markup()
+
+
+def get_pose_subgroups_admin_list(subgroups: List, group_id: int, action: str = "view") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    for subgroup in subgroups:
+        if action == "add_prompt":
+            callback = f"pose_admin_add_prompt_subgroup_{group_id}_{subgroup.id}"
+        elif action == "edit":
+            callback = f"pose_admin_edit_subgroup_{group_id}_{subgroup.id}"
+        elif action == "delete":
+            callback = f"pose_admin_delete_subgroup_{group_id}_{subgroup.id}"
+        else:
+            callback = f"pose_admin_view_subgroup_{group_id}_{subgroup.id}"
+        
+        builder.row(InlineKeyboardButton(text=f"{subgroup.name}", callback_data=callback))
+    
+    if action == "edit":
+        back_callback = "pose_edit_main_menu"
+    elif action == "delete":
+        back_callback = "pose_delete_main_menu"
+    else:
+        back_callback = "admin_poses"
+    
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=back_callback))
+    return builder.as_markup()
+
+
+def get_pose_prompts_admin_list(prompts: List, group_id: int, subgroup_id: int, action: str = "view") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    for prompt in prompts:
+        if action == "edit":
+            callback = f"pose_admin_edit_prompt_{prompt.id}"
+        elif action == "delete":
+            callback = f"pose_admin_delete_prompt_{prompt.id}"
+        else:
+            callback = f"pose_admin_view_prompt_{prompt.id}"
+        
+        builder.row(InlineKeyboardButton(text=f"{prompt.name}", callback_data=callback))
+    
+    if action == "edit":
+        back_callback = "pose_edit_main_menu"
+    elif action == "delete":
+        back_callback = "pose_delete_main_menu"
+    else:
+        back_callback = "admin_poses"
+    
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=back_callback))
+    return builder.as_markup()
+
+
 def get_user_management_menu() -> InlineKeyboardMarkup:
-    """User boshqaruv asosiy menyusi"""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔍 Поиск пользователя", callback_data="user_search"))
     builder.row(InlineKeyboardButton(text="🚫 Заблокированные пользователи", callback_data="user_banned_list"))
@@ -25,7 +164,6 @@ def get_user_management_menu() -> InlineKeyboardMarkup:
 
 
 def get_user_detail_keyboard(user_id: int, is_banned: bool) -> InlineKeyboardMarkup:
-    """Bitta user uchun batafsil klaviatura"""
     builder = InlineKeyboardBuilder()
     
     if is_banned:
@@ -40,7 +178,6 @@ def get_user_detail_keyboard(user_id: int, is_banned: bool) -> InlineKeyboardMar
 
 
 def get_balance_action_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    """Balans o'zgartirish klaviaturasi"""
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="➕ Добавить", callback_data=f"balance_add_{user_id}"),
@@ -50,15 +187,7 @@ def get_balance_action_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_cancel_keyboard(back_to: str = "admin_users") -> InlineKeyboardMarkup:
-    """Bekor qilish klaviaturasi"""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data=back_to))
-    return builder.as_markup()
-
-
 def get_user_list_keyboard(users: List, offset: int = 0) -> InlineKeyboardMarkup:
-    """Userlar ro'yxati klaviaturasi"""
     builder = InlineKeyboardBuilder()
     
     for user in users:
@@ -69,7 +198,6 @@ def get_user_list_keyboard(users: List, offset: int = 0) -> InlineKeyboardMarkup
             callback_data=f"user_view_{user.telegram_id}"
         ))
     
-    # Pagination (agar kerak bo'lsa)
     nav_buttons = []
     if offset > 0:
         nav_buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"user_list_{offset-20}"))
@@ -103,60 +231,60 @@ def get_media_type_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_pose_management_keyboard() -> InlineKeyboardMarkup:
+def get_cancel_keyboard(back_to: str = "admin_back") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="➕ Добавить элемент", callback_data="pose_add"))
-    builder.row(InlineKeyboardButton(text="📋 Список элементов", callback_data="pose_list"))
-    builder.row(InlineKeyboardButton(text="🗑 Удалить элемент", callback_data="pose_delete"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_back"))
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data=back_to))
     return builder.as_markup()
 
 
-def get_scene_management_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="➕ Добавить элемент", callback_data="scene_add"))
-    builder.row(InlineKeyboardButton(text="📋 Список элементов", callback_data="scene_list"))
-    builder.row(InlineKeyboardButton(text="🗑 Удалить элемент", callback_data="scene_delete"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_back"))
-    return builder.as_markup()
-
-
-def get_pose_groups_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🧍 Стоячие", callback_data="pose_group_standing"))
-    builder.row(InlineKeyboardButton(text="🪑 Сидячие", callback_data="pose_group_sitting"))
-    builder.row(InlineKeyboardButton(text="⚡ Динамические", callback_data="pose_group_dynamic"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_poses"))
-    return builder.as_markup()
-
-
-def get_scene_groups_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🏠 Внутренние", callback_data="scene_group_indoor"))
-    builder.row(InlineKeyboardButton(text="🌳 Наружные", callback_data="scene_group_outdoor"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_scenes"))
-    return builder.as_markup()
-
-
-def get_element_type_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🎬 Действие", callback_data="elem_type_action"))
-    builder.row(InlineKeyboardButton(text="😊 Настроение", callback_data="elem_type_mood"))
-    builder.row(InlineKeyboardButton(text="🎨 Стиль", callback_data="elem_type_style"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_poses"))
-    return builder.as_markup()
-
-
-def get_confirm_keyboard() -> InlineKeyboardMarkup:
+def get_confirm_delete_keyboard(item_type: str, item_id: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="✅ Да", callback_data="confirm_yes"),
-        InlineKeyboardButton(text="❌ Нет", callback_data="confirm_no")
+        InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"confirm_delete_{item_type}_{item_id}"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="admin_back")
     )
     return builder.as_markup()
 
 
-def get_admin_back_keyboard() -> InlineKeyboardMarkup:
+def get_admin_back_keyboard(back_to: str = "admin_back") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=back_to))
+    return builder.as_markup()
+
+
+def get_confirmation_keyboard_photo(cost: int, back_to: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Да, списать", callback_data=f"photo_confirm_{cost}"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data=f"photo_back_{back_to}")
+    )
+    return builder.as_markup()
+
+
+def get_model_type_main_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="👁 Просмотр всех типов", callback_data="model_type_view_all"))
+    builder.row(InlineKeyboardButton(text="➕ Добавить тип", callback_data="model_type_add"))
+    builder.row(InlineKeyboardButton(text="🗑 Удалить тип", callback_data="model_type_delete_menu"))
     builder.row(InlineKeyboardButton(text="◀️ В админ панель", callback_data="admin_back"))
+    return builder.as_markup()
+
+
+def get_model_types_list(model_types: List, action: str = "view") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    for mt in model_types:
+        if action == "edit":
+            callback = f"model_type_edit_{mt.id}"
+            text = f"✏️ {mt.name}"
+        elif action == "delete":
+            callback = f"model_type_delete_{mt.id}"
+            text = f"🗑 {mt.name}"
+        else:
+            callback = f"model_type_view_{mt.id}"
+            text = f"{mt.name}"
+        
+        builder.row(InlineKeyboardButton(text=text, callback_data=callback))
+    
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_model_types"))
     return builder.as_markup()

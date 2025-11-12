@@ -40,8 +40,6 @@ async def normalize_new_model(callback: CallbackQuery, state: FSMContext):
     await state.update_data(mode="new_model", photo_urls=[])
     await callback.message.edit_text("📸 Отправьте одно фото изделия/объекта.\n\n✨ Можно отправить как фото или как файл", reply_markup=get_back_button("norm_new_model"))
 
-
-# YANGILANGAN: photo VA document qabul qiladi
 @router.message(NormalizeStates.waiting_for_photos, F.photo | F.document)
 async def normalize_photo_received(message: Message, state: FSMContext):
     if message.media_group_id:
@@ -53,7 +51,6 @@ async def normalize_photo_received(message: Message, state: FSMContext):
         return
     
     try:
-        # Photo yoki document dan URL olish
         photo_url = await get_photo_url_from_message(message)
         
     except ValueError as e:

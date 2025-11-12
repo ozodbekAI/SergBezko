@@ -8,7 +8,6 @@ router = Router(name="common")
 
 @router.callback_query(F.data.in_(["back_to_generations", "back_to_generation"]))
 async def back_to_generation_handler(callback: CallbackQuery, state: FSMContext):
-    """Generation menyuga qaytish - UNIFIED handler"""
     await callback.answer()
     await state.clear()
     

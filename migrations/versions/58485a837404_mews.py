@@ -1,8 +1,8 @@
-"""news
+"""mews
 
-Revision ID: a70fd0dd6e49
+Revision ID: 58485a837404
 Revises: 
-Create Date: 2025-11-10 18:43:37.560335
+Create Date: 2025-11-12 05:28:45.808476
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a70fd0dd6e49'
+revision: str = '58485a837404'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -40,6 +40,16 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_bot_messages_message_key'), 'bot_messages', ['message_key'], unique=True)
+    op.create_table('model_types',
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('name', sa.String(length=255), nullable=False),
+    sa.Column('prompt', sa.Text(), nullable=False),
+    sa.Column('order_index', sa.Integer(), nullable=False),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('name')
+    )
     op.create_table('payments',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('user_id', sa.BigInteger(), nullable=False),
@@ -53,37 +63,31 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_payments_payment_id'), 'payments', ['payment_id'], unique=True)
     op.create_index(op.f('ix_payments_user_id'), 'payments', ['user_id'], unique=False)
-    op.create_table('pose_elements',
+    op.create_table('pose_groups',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('pose_id', sa.String(length=100), nullable=False),
-    sa.Column('element_type', sa.String(length=50), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=False),
-    sa.Column('prompt', sa.String(length=500), nullable=False),
-    sa.Column('group', sa.String(length=100), nullable=False),
     sa.Column('order_index', sa.Integer(), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_pose_elements_pose_id'), 'pose_elements', ['pose_id'], unique=False)
-    op.create_table('scene_elements',
+    op.create_table('scene_groups',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('scene_id', sa.String(length=100), nullable=False),
-    sa.Column('element_type', sa.String(length=50), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=False),
-    sa.Column('prompt_far', sa.Text(), nullable=True),
-    sa.Column('prompt_medium', sa.Text(), nullable=True),
-    sa.Column('prompt_close', sa.Text(), nullable=True),
-    sa.Column('prompt_side', sa.Text(), nullable=True),
-    sa.Column('prompt_back', sa.Text(), nullable=True),
-    sa.Column('prompt_motion', sa.Text(), nullable=True),
-    sa.Column('group', sa.String(length=100), nullable=False),
     sa.Column('order_index', sa.Integer(), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_scene_elements_scene_id'), 'scene_elements', ['scene_id'], unique=False)
+    op.create_table('scene_plans',
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('name', sa.String(length=255), nullable=False),
+    sa.Column('prompt', sa.Text(), nullable=False),
+    sa.Column('order_index', sa.Integer(), nullable=False),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.PrimaryKeyConstraint('id')
+    )
     op.create_table('tasks',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('user_id', sa.BigInteger(), nullable=False),
@@ -122,12 +126,39 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_users_telegram_id'), 'users', ['telegram_id'], unique=True)
+    op.create_table('pose_subgroups',
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('group_id', sa.Integer(), nullable=False),
+    sa.Column('name', sa.String(length=255), nullable=False),
+    sa.Column('order_index', sa.Integer(), nullable=False),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['group_id'], ['pose_groups.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_pose_subgroups_group_id'), 'pose_subgroups', ['group_id'], unique=False)
+    op.create_table('pose_prompts',
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('subgroup_id', sa.Integer(), nullable=False),
+    sa.Column('name', sa.String(length=255), nullable=False),
+    sa.Column('prompt', sa.Text(), nullable=False),
+    sa.Column('order_index', sa.Integer(), nullable=False),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['subgroup_id'], ['pose_subgroups.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_pose_prompts_subgroup_id'), 'pose_prompts', ['subgroup_id'], unique=False)
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_index(op.f('ix_pose_prompts_subgroup_id'), table_name='pose_prompts')
+    op.drop_table('pose_prompts')
+    op.drop_index(op.f('ix_pose_subgroups_group_id'), table_name='pose_subgroups')
+    op.drop_table('pose_subgroups')
     op.drop_index(op.f('ix_users_telegram_id'), table_name='users')
     op.drop_table('users')
     op.drop_index(op.f('ix_user_states_user_id'), table_name='user_states')
@@ -135,13 +166,13 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_tasks_user_id'), table_name='tasks')
     op.drop_index(op.f('ix_tasks_created_at'), table_name='tasks')
     op.drop_table('tasks')
-    op.drop_index(op.f('ix_scene_elements_scene_id'), table_name='scene_elements')
-    op.drop_table('scene_elements')
-    op.drop_index(op.f('ix_pose_elements_pose_id'), table_name='pose_elements')
-    op.drop_table('pose_elements')
+    op.drop_table('scene_plans')
+    op.drop_table('scene_groups')
+    op.drop_table('pose_groups')
     op.drop_index(op.f('ix_payments_user_id'), table_name='payments')
     op.drop_index(op.f('ix_payments_payment_id'), table_name='payments')
     op.drop_table('payments')
+    op.drop_table('model_types')
     op.drop_index(op.f('ix_bot_messages_message_key'), table_name='bot_messages')
     op.drop_table('bot_messages')
     op.drop_index(op.f('ix_admin_logs_admin_id'), table_name='admin_logs')

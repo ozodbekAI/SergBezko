@@ -1,7 +1,7 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, String, Integer, DateTime, Text, Boolean, Float, Enum as SQLEnum
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from typing import Optional
+from sqlalchemy import BigInteger, String, Integer, DateTime, Text, Boolean, Float, Enum as SQLEnum, ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from typing import Optional, List
 import enum
 
 
@@ -39,7 +39,7 @@ class User(Base):
     last_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     balance: Mapped[int] = mapped_column(Integer, default=0)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_banned: Mapped[bool] = mapped_column(Boolean, default=False)  # YANGI: Ban field
+    is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_activity: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -82,59 +82,106 @@ class UserState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-# YANGI: Bot xabarlari uchun model
 class BotMessage(Base):
     __tablename__ = "bot_messages"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    message_key: Mapped[str] = mapped_column(String(100), unique=True, index=True)  # start, product_card, normalize, video, photo
+    message_key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     text: Mapped[str] = mapped_column(Text)
-    media_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # photo, video, none
+    media_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     media_file_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-# YANGI: Poses elementlari
-class PoseElement(Base):
-    __tablename__ = "pose_elements"
+
+class ModelType(Base):
+    __tablename__ = "model_types"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    pose_id: Mapped[str] = mapped_column(String(100), index=True)  # jumping, standing_straight
-    element_type: Mapped[str] = mapped_column(String(50))  # action, mood, style
-    name: Mapped[str] = mapped_column(String(255))  # "Прыжок в воздухе"
-    prompt: Mapped[str] = mapped_column(String(500))  # "jumping in air"
-    group: Mapped[str] = mapped_column(String(100))  # dynamic, standing
+    name: Mapped[str] = mapped_column(String(255), unique=True)
+    prompt: Mapped[str] = mapped_column(Text)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
-# YANGI: Scene elementlari
-class SceneElement(Base):
-    __tablename__ = "scene_elements"
+class PoseGroup(Base):
+
+    __tablename__ = "pose_groups"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    scene_id: Mapped[str] = mapped_column(String(100), index=True)
-    element_type: Mapped[str] = mapped_column(String(50))
     name: Mapped[str] = mapped_column(String(255))
-    prompt_far: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    prompt_medium: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    prompt_close: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    prompt_side: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    prompt_back: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    prompt_motion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    group: Mapped[str] = mapped_column(String(100))  
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    subgroups: Mapped[List["PoseSubgroup"]] = relationship("PoseSubgroup", back_populates="group", cascade="all, delete-orphan")
+
+
+class PoseSubgroup(Base):
+    __tablename__ = "pose_subgroups"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[int] = mapped_column(Integer, ForeignKey("pose_groups.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    group: Mapped["PoseGroup"] = relationship("PoseGroup", back_populates="subgroups")
+    prompts: Mapped[List["PosePrompt"]] = relationship("PosePrompt", back_populates="subgroup", cascade="all, delete-orphan")
+
+
+class PosePrompt(Base):
+    __tablename__ = "pose_prompts"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    subgroup_id: Mapped[int] = mapped_column(Integer, ForeignKey("pose_subgroups.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    prompt: Mapped[str] = mapped_column(Text)
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    subgroup: Mapped["PoseSubgroup"] = relationship("PoseSubgroup", back_populates="prompts")
+
+
+
+class SceneGroup(Base):
+    __tablename__ = "scene_groups"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255))
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    plans: Mapped[List["ScenePlanPrompt"]] = relationship(
+        "ScenePlanPrompt", back_populates="group", cascade="all, delete-orphan"
+    )
+
+
+class ScenePlanPrompt(Base):
+    __tablename__ = "scene_plans"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[int] = mapped_column(Integer, ForeignKey("scene_groups.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255))
+    prompt: Mapped[str] = mapped_column(Text)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    group: Mapped[SceneGroup] = relationship("SceneGroup", back_populates="plans")
 
-# YANGI: Admin logs
+
+
+
+
 class AdminLog(Base):
     __tablename__ = "admin_logs"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     admin_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    action: Mapped[str] = mapped_column(String(100)) 
+    action: Mapped[str] = mapped_column(String(100))
     details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

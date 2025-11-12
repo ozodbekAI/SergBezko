@@ -2,7 +2,11 @@ from aiogram import F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List
+from database.models import SceneGroup, ScenePlanPrompt
 from database.repositories import UserRepository
+
+
+
 
 
 def get_back_button_normalize(current_step: str):
@@ -315,6 +319,6 @@ def get_confirmation_keyboard(cost: int, back_data: str = "confirming") -> Inlin
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="✅ Да", callback_data=f"confirm_{cost}"),
-        InlineKeyboardButton(text="❌ Отмена", callback_data=f"back_{back_data}")
+        InlineKeyboardButton(text="❌ Отмена", callback_data=f"photo_back_{back_data}")
     )
     return builder.as_markup()

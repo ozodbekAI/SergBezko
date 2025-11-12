@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from database import async_session_maker
-from database.repositories import UserRepository, PoseElementRepository, SceneElementRepository
+from database.repositories import UserRepository, PoseRepository, SceneRepository
 from services.config_loader import config_loader
 from services.kie_service import kie_service
 from services.translator import translator_service
@@ -22,7 +22,7 @@ async def repeat_last_generation(callback: CallbackQuery, state: FSMContext):
     
     if not last_generation:
         await callback.message.answer(
-            "❌",
+            "❌ Нет последней генерации для повтора.",
             reply_markup=get_back_to_generation()
         )
         return
@@ -59,7 +59,6 @@ async def repeat_last_generation(callback: CallbackQuery, state: FSMContext):
             
     except Exception as e:
         logger.error(f"Repeat generation error: {e}", exc_info=True)
-        # Xatolik bo'lsa kreditslarni qaytarish
         async with async_session_maker() as session:
             user_repo = UserRepository(session)
             await user_repo.update_balance(callback.from_user.id, cost)
@@ -78,34 +77,27 @@ async def repeat_photo_generation(callback: CallbackQuery, data: dict, user):
     results = []
     
     if mode == "scene_change":
-        selected_ids = data["selected_element_ids"]
-        scene_id = data["selected_scene"]
-        plan_id = data.get("selected_plan", "medium")
+        plan_id = data.get("plan_id")
+
         
         async with async_session_maker() as session:
-            scene_repo = SceneElementRepository(session)
-            all_elements = await scene_repo.get_elements_by_scene(scene_id)
-        
-        for elem in all_elements:
-            if elem.id in selected_ids:
-                prompt_field = f"prompt_{plan_id}"
-                prompt = getattr(elem, prompt_field, elem.prompt_medium)
-                result = await kie_service.change_scene(photo_url, prompt)
-                result["element_name"] = f"{elem.name} ({plan_id.title()})"
+            scene_repo = SceneRepository(session)
+            prompt = await scene_repo.get_plan(plan_id)
+            if prompt:
+                result = await kie_service.change_scene(photo_url, prompt.prompt)
+                result["element_name"] = prompt.name
                 results.append(result)
-    
+
     elif mode == "pose_change":
-        selected_ids = data["selected_element_ids"]
-        pose_id = data["selected_pose"]
+        prompt_id = data.get("prompt_id")
         
         async with async_session_maker() as session:
-            pose_repo = PoseElementRepository(session)
-            all_elements = await pose_repo.get_elements_by_pose(pose_id)
-        
-        for elem in all_elements:
-            if elem.id in selected_ids:
-                result = await kie_service.change_pose(photo_url, elem.prompt)
-                result["element_name"] = elem.name
+            pose_repo = PoseRepository(session)
+            
+            prompt = await pose_repo.get_prompt(prompt_id)
+            if prompt:
+                result = await kie_service.change_pose(photo_url, prompt.prompt)
+                result["element_name"] = prompt.name
                 results.append(result)
     
     elif mode == "custom":
@@ -134,7 +126,7 @@ async def repeat_video_generation(callback: CallbackQuery, data: dict, user):
     prompt = data["prompt"]
     cost = data["cost"]
     model = data["model"]
-    duration = int(data["duration"].split()[0].replace("~", ""))
+    duration = int(data["duration"].split()[0].replace("~", "")) if isinstance(data["duration"], str) else data["duration"]
     resolution = data["resolution"]
     
     result = await kie_service.generate_video(photo_url, prompt, model, duration, resolution)
@@ -178,8 +170,56 @@ async def repeat_normalize_generation(callback: CallbackQuery, data: dict, user)
 
 
 async def repeat_product_card_generation(callback: CallbackQuery, data: dict, user):
+    photo_url = data["photo_url"]
     cost = data["cost"]
-    results = await kie_service.generate_product_cards(data)
+    generation_type = data["generation_type"]
+    
+    results = []
+    
+    async with async_session_maker() as session:
+        scene_repo = SceneRepository(session)
+        
+        if generation_type == "all_scenes":
+            groups = await scene_repo.get_all_groups()
+            plans = await scene_repo.get_all_plans()
+            
+            for group in groups:
+                for plan in plans:
+                    prompts = await scene_repo.get_prompts_by_group_and_plan(group.id, plan.id)
+                    if prompts:
+                        prompt = prompts[0]
+                        result = await kie_service.change_scene(photo_url, prompt.prompt)
+                        result["scene_name"] = group.name
+                        result["plan"] = plan.name
+                        results.append(result)
+        
+        elif generation_type == "group_all_plans":
+            group_id = data["selected_group"]
+            group = await scene_repo.get_group(group_id)
+            plans = await scene_repo.get_all_plans()
+            
+            for plan in plans:
+                prompts = await scene_repo.get_prompts_by_group_and_plan(group_id, plan.id)
+                if prompts:
+                    prompt = prompts[0]
+                    result = await kie_service.change_scene(photo_url, prompt.prompt)
+                    result["scene_name"] = group.name
+                    result["plan"] = plan.name
+                    results.append(result)
+        
+        elif generation_type == "single_plan":
+            group_id = data["selected_group"]
+            plan_id = data["selected_plan"]
+            group = await scene_repo.get_group(group_id)
+            plan = await scene_repo.get_plan(plan_id)
+            prompts = await scene_repo.get_prompts_by_group_and_plan(group_id, plan_id)
+            
+            if prompts:
+                prompt = prompts[0]
+                result = await kie_service.change_scene(photo_url, prompt.prompt)
+                result["scene_name"] = group.name
+                result["plan"] = plan.name
+                results.append(result)
     
     for i, result in enumerate(results, 1):
         if "image" in result:
