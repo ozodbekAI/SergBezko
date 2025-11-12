@@ -1,10 +1,7 @@
 import logging
-from typing import Optional
-
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardMarkup
 from aiogram.exceptions import TelegramBadRequest
 
 from database import async_session_maker
@@ -20,6 +17,7 @@ from admin_keyboards import (
     kb_add_flow_back_cancel,
     kb_back_to_admin_video_main,
     kb_back_to_edit_menu,
+    kb_video_empty_state,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,24 +36,23 @@ async def safe_edit_text(cb: CallbackQuery, text: str, reply_markup: InlineKeybo
             raise
 
 def _truncate(text: str, limit: int = 180) -> str:
-    if text is None:
-        return ""
-    return text if len(text) <= limit else text[:limit - 1] + "…"
+    return "" if text is None else (text if len(text) <= limit else text[:limit - 1] + "…")
 
+# ——— ENTRY ———
 @router.callback_query(F.data == "admin_video_scenarios")
 async def admin_video_entry(cb: CallbackQuery, state: FSMContext):
     await state.clear()
     await cb.answer()
     await safe_edit_text(cb, "🎬 Сценарии видео — админ меню", reply_markup=get_admin_video_main_menu())
 
+# ——— VIEW ———
 @router.callback_query(F.data == "vidsc_view")
 async def vids_view_list(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        scenarios = await repo.get_all()
+        scenarios = await VideoScenarioRepository(session).get_all()
     if not scenarios:
-        await safe_edit_text(cb, "Пока нет сценариев. Нажмите «➕ Добавить сценарий».", reply_markup=get_admin_video_main_menu())
+        await safe_edit_text(cb, "Пока нет сценариев.\n\nНажмите «➕ Добавить сценарий».", reply_markup=kb_video_empty_state())
         return
     await safe_edit_text(cb, "👁 Сценарии (активные сверху):", reply_markup=get_video_scenarios_list(scenarios, action="view"))
 
@@ -64,8 +61,7 @@ async def vids_view_detail(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     sid = int(cb.data.removeprefix("vidsc_view_"))
     async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        s = await repo.get_by_id(sid)
+        s = await VideoScenarioRepository(session).get_by_id(sid)
     if not s:
         await safe_edit_text(cb, "❌ Сценарий не найден.", reply_markup=get_admin_video_main_menu())
         return
@@ -77,8 +73,9 @@ async def vids_view_detail(cb: CallbackQuery, state: FSMContext):
         f"Статус: {status}\n\n"
         f"📝 Промпт:\n<code>{_truncate(s.prompt, 200)}</code>"
     )
-    await safe_edit_text(cb, text, reply_markup=get_video_scenario_detail_keyboard(s.id, s.is_active), parse_mode="HTML")
+    await safe_edit_text(cb, text, reply_markup=get_video_scenario_detail_keyboard(s.id), parse_mode="HTML")
 
+# ——— ADD ———
 @router.callback_query(F.data == "vidsc_add")
 async def vids_add_start(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
@@ -110,7 +107,7 @@ async def vids_add_order(msg: Message, state: FSMContext):
     async with async_session_maker() as session:
         repo = VideoScenarioRepository(session)
         try:
-            obj = await repo.add(name=name, prompt=prompt, order_index=order_index, is_active=True)
+            await repo.add(name=name, prompt=prompt, order_index=order_index, is_active=True)
         except Exception as e:
             logger.exception("Create scenario failed")
             await msg.answer(f"❌ Не удалось создать сценарий: {e}", reply_markup=kb_back_to_admin_video_main())
@@ -118,27 +115,28 @@ async def vids_add_order(msg: Message, state: FSMContext):
             return
 
     await state.clear()
-    await msg.answer(f"✅ Сценарий «<b>{name}</b>» добавлен (#{order_index}).", parse_mode="HTML", reply_markup=kb_back_to_admin_video_main())
-
-    # Ro'yxatni ko'rsatamiz
+    # keyin ro'yxatni ko'rsatamiz (msg.answer — bu message oqim, callback emas)
     async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        scenarios = await repo.get_all()
+        scenarios = await VideoScenarioRepository(session).get_all()
     await msg.answer("👁 Сценарии:", reply_markup=get_video_scenarios_list(scenarios, action="view"))
 
+@router.callback_query(F.data == "vidsc_add_cancel")
+async def vids_add_cancel(cb: CallbackQuery, state: FSMContext):
+    await cb.answer("Отменено")
+    await state.clear()
+    await safe_edit_text(cb, "🎬 Сценарии видео — админ меню", reply_markup=get_admin_video_main_menu())
 
+# ——— EDIT ———
 @router.callback_query(F.data == "vidsc_edit_menu")
 async def vids_edit_menu(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        scenarios = await repo.get_all()
+        scenarios = await VideoScenarioRepository(session).get_all()
     if not scenarios:
-        await safe_edit_text(cb, "Сценариев пока нет.", reply_markup=get_admin_video_main_menu())
+        await safe_edit_text(cb, "Сценариев пока нет.", reply_markup=kb_video_empty_state())
         return
     await state.set_state(AdminVideoScenarioStates.selecting_scenario)
     await safe_edit_text(cb, "✏️ Выберите сценарий для редактирования:", reply_markup=get_video_scenarios_list(scenarios, action="edit"))
-
 
 @router.callback_query(AdminVideoScenarioStates.selecting_scenario, F.data.startswith("vidsc_edit_"))
 async def vids_edit_pick(cb: CallbackQuery, state: FSMContext):
@@ -146,17 +144,13 @@ async def vids_edit_pick(cb: CallbackQuery, state: FSMContext):
     sid = int(cb.data.removeprefix("vidsc_edit_"))
     await state.update_data(edit_id=sid)
     async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        s = await repo.get_by_id(sid)
+        s = await VideoScenarioRepository(session).get_by_id(sid)
     if not s:
-        await cb.message.edit_text("❌ Сценарий не найден.", reply_markup=get_admin_video_main_menu())
+        await safe_edit_text(cb, "❌ Сценарий не найден.", reply_markup=kb_back_to_admin_video_main())
         await state.clear()
         return
     await state.set_state(AdminVideoScenarioStates.editing_menu)
-    await cb.message.edit_text(
-        f"✏️ Редактирование «{s.name}»: выберите поле:",
-        reply_markup=get_video_scenario_edit_menu(sid)
-    )
+    await safe_edit_text(cb, f"✏️ Редактирование «{s.name}»: выберите поле:", reply_markup=get_video_scenario_edit_menu(sid))
 
 @router.callback_query(AdminVideoScenarioStates.editing_menu, F.data.startswith("vidsc_edit_name_"))
 async def vids_edit_name_start(cb: CallbackQuery, state: FSMContext):
@@ -168,12 +162,10 @@ async def vids_edit_name_start(cb: CallbackQuery, state: FSMContext):
 
 @router.message(AdminVideoScenarioStates.editing_name, F.text)
 async def vids_edit_name_save(msg: Message, state: FSMContext):
-    data = await state.get_data()
-    sid = data.get("edit_id")
+    sid = (await state.get_data()).get("edit_id")
     new_name = msg.text.strip()
     async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        s = await repo.update(sid, name=new_name)
+        s = await VideoScenarioRepository(session).update(sid, name=new_name)
     await state.set_state(AdminVideoScenarioStates.editing_menu)
     await msg.answer(f"✅ Имя обновлено: <b>{s.name}</b>", parse_mode="HTML", reply_markup=get_video_scenario_edit_menu(sid))
 
@@ -187,12 +179,10 @@ async def vids_edit_prompt_start(cb: CallbackQuery, state: FSMContext):
 
 @router.message(AdminVideoScenarioStates.editing_prompt, F.text)
 async def vids_edit_prompt_save(msg: Message, state: FSMContext):
-    data = await state.get_data()
-    sid = data.get("edit_id")
+    sid = (await state.get_data()).get("edit_id")
     new_prompt = msg.text.strip()
     async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        s = await repo.update(sid, prompt=new_prompt)
+        await VideoScenarioRepository(session).update(sid, prompt=new_prompt)
     await state.set_state(AdminVideoScenarioStates.editing_menu)
     await msg.answer("✅ Промпт обновлен.", reply_markup=get_video_scenario_edit_menu(sid))
 
@@ -206,70 +196,39 @@ async def vids_edit_order_start(cb: CallbackQuery, state: FSMContext):
 
 @router.message(AdminVideoScenarioStates.editing_order, F.text)
 async def vids_edit_order_save(msg: Message, state: FSMContext):
-    data = await state.get_data()
-    sid = data.get("edit_id")
+    sid = (await state.get_data()).get("edit_id")
     try:
         new_order = int(msg.text.strip())
     except Exception:
         await msg.answer("❌ Нужно целое число. Повторите ввод.", reply_markup=kb_back_to_edit_menu(sid))
         return
     async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        s = await repo.update(sid, order_index=new_order)
+        s = await VideoScenarioRepository(session).update(sid, order_index=new_order)
     await state.set_state(AdminVideoScenarioStates.editing_menu)
     await msg.answer(f"✅ Порядок обновлен: <b>{s.order_index}</b>", parse_mode="HTML", reply_markup=get_video_scenario_edit_menu(sid))
 
-@router.callback_query(F.data == "vidsc_toggle_menu")
-async def vids_toggle_menu(cb: CallbackQuery, state: FSMContext):
-    await cb.answer()
-    async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        scenarios = await repo.get_all()
-    if not scenarios:
-        await safe_edit_text(cb, "Сценариев пока нет.", reply_markup=get_admin_video_main_menu())
-        return
-    await safe_edit_text(cb, "🔄 Выберите сценарий для включения/выключения:", reply_markup=get_video_scenarios_list(scenarios, action="toggle"))
-
-@router.callback_query(F.data.startswith("vidsc_toggle_"))
-async def vids_toggle(cb: CallbackQuery, state: FSMContext):
-    await cb.answer()
-    sid = int(cb.data.removeprefix("vidsc_toggle_"))
-    async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        s = await repo.get_by_id(sid)
-        if not s:
-            await cb.message.edit_text("❌ Сценарий не найден.", reply_markup=get_admin_video_main_menu())
-            return
-        s = await repo.update(sid, is_active=not s.is_active)
-    status = "включен ✅" if s.is_active else "выключен 🚫"
-    await cb.message.edit_text(f"🎬 «{s.name}» теперь {status}.", reply_markup=get_admin_video_main_menu())
-
+# ——— DELETE ———
 @router.callback_query(F.data == "vidsc_delete_menu")
 async def vids_delete_menu(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        scenarios = await repo.get_all()
+        scenarios = await VideoScenarioRepository(session).get_all()
     if not scenarios:
-        await cb.message.edit_text("Сценариев пока нет.", reply_markup=get_admin_video_main_menu())
+        await safe_edit_text(cb, "Сценариев пока нет.", reply_markup=kb_video_empty_state())
         return
-    await cb.message.edit_text("🗑 Выберите сценарий для удаления:", reply_markup=get_video_scenarios_list(scenarios, action="delete"))
+    await safe_edit_text(cb, "🗑 Выберите сценарий для удаления:", reply_markup=get_video_scenarios_list(scenarios, action="delete"))
 
 @router.callback_query(F.data.startswith("vidsc_delete_"))
 async def vids_delete_confirm(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     sid = int(cb.data.removeprefix("vidsc_delete_"))
     async with async_session_maker() as session:
-        repo = VideoScenarioRepository(session)
-        s = await repo.get_by_id(sid)
+        s = await VideoScenarioRepository(session).get_by_id(sid)
     if not s:
-        await cb.message.edit_text("❌ Сценарий не найден.", reply_markup=get_admin_video_main_menu())
+        await safe_edit_text(cb, "❌ Сценарий не найден.", reply_markup=get_admin_video_main_menu())
         return
     await state.update_data(delete_id=sid)
-    await cb.message.edit_text(
-        f"⚠️ Удалить «{s.name}»?\nДействие необратимо.",
-        reply_markup=get_confirm_delete_keyboard_video(sid)
-    )
+    await safe_edit_text(cb, f"⚠️ Удалить «{s.name}»?\nДействие необратимо.", reply_markup=get_confirm_delete_keyboard_video(sid))
 
 @router.callback_query(F.data.startswith("vidsc_delete_confirm_"))
 async def vids_delete_do(cb: CallbackQuery, state: FSMContext):
@@ -280,10 +239,4 @@ async def vids_delete_do(cb: CallbackQuery, state: FSMContext):
         await repo.delete(sid)
         scenarios = await repo.get_all()
     await state.clear()
-    await cb.message.edit_text("✅ Удалено.\n\nОставшиеся сценарии:", reply_markup=get_video_scenarios_list(scenarios, action="view"))
-
-@router.callback_query(F.data == "vidsc_add_cancel")
-async def vids_add_cancel(cb: CallbackQuery, state: FSMContext):
-    await cb.answer("Отменено")
-    await state.clear()
-    await safe_edit_text(cb, "🎬 Сценарии видео — админ меню", reply_markup=get_admin_video_main_menu())
+    await safe_edit_text(cb, "✅ Удалено.\n\nОставшиеся сценарии:", reply_markup=get_video_scenarios_list(scenarios, action="view"))
