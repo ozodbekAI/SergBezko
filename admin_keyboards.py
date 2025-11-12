@@ -7,6 +7,7 @@ def get_admin_main_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="👥 Управление пользователями", callback_data="admin_users"))
     builder.row(InlineKeyboardButton(text="📝 Изменить сообщения", callback_data="admin_messages"))
+    builder.row(InlineKeyboardButton(text="🎬 Сценарии видео", callback_data="admin_video_scenarios"))
     builder.row(InlineKeyboardButton(text="👤 Типы моделей", callback_data="admin_model_types"))
     builder.row(InlineKeyboardButton(text="🤸 Управление позами", callback_data="admin_poses"))
     builder.row(InlineKeyboardButton(text="🌆 Управление сценами", callback_data="admin_scenes"))
@@ -435,3 +436,62 @@ def get_pose_prompts_admin_list(prompts: List, group_id: int, subgroup_id: int, 
     
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=back_callback))
     return builder.as_markup()
+
+
+def get_admin_video_main_menu() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="👁 Просмотр сценариев", callback_data="vidsc_view"))
+    b.row(InlineKeyboardButton(text="➕ Добавить сценарий", callback_data="vidsc_add"))
+    b.row(InlineKeyboardButton(text="✏️ Редактировать", callback_data="vidsc_edit_menu"))
+    b.row(InlineKeyboardButton(text="🔄 Актив/Неактив", callback_data="vidsc_toggle_menu"))
+    b.row(InlineKeyboardButton(text="🗑 Удалить", callback_data="vidsc_delete_menu"))
+    b.row(InlineKeyboardButton(text="◀️ В админ панель", callback_data="admin_back"))
+    return b.as_markup()
+
+def get_video_scenarios_list(scenarios: List, action: str = "view") -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for s in scenarios:
+        status = "✅" if s.is_active else "🚫"
+        text = f"{status} {s.name}  • #{s.order_index}"
+        if action == "edit":
+            cb = f"vidsc_edit_{s.id}"
+        elif action == "toggle":
+            cb = f"vidsc_toggle_{s.id}"
+        elif action == "delete":
+            cb = f"vidsc_delete_{s.id}"
+        else:
+            cb = f"vidsc_view_{s.id}"
+        b.row(InlineKeyboardButton(text=text, callback_data=cb))
+    back = {
+        "edit": "vidsc_edit_menu",
+        "toggle": "vidsc_toggle_menu",
+        "delete": "vidsc_delete_menu",
+        "view": "admin_video_scenarios"
+    }.get(action, "admin_video_scenarios")
+    b.row(InlineKeyboardButton(text="◀️ Назад", callback_data=back))
+    return b.as_markup()
+
+def get_video_scenario_detail_keyboard(scenario_id: int, is_active: bool) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="✏️ Изменить", callback_data=f"vidsc_edit_{scenario_id}"))
+    toggle_text = "🔕 Выключить" if is_active else "🔔 Включить"
+    b.row(InlineKeyboardButton(text=toggle_text, callback_data=f"vidsc_toggle_{scenario_id}"))
+    b.row(InlineKeyboardButton(text="🗑 Удалить", callback_data=f"vidsc_delete_{scenario_id}"))
+    b.row(InlineKeyboardButton(text="◀️ Назад", callback_data="vidsc_view"))
+    return b.as_markup()
+
+def get_video_scenario_edit_menu(scenario_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="✏️ Имя", callback_data=f"vidsc_edit_name_{scenario_id}"))
+    b.row(InlineKeyboardButton(text="📝 Промпт", callback_data=f"vidsc_edit_prompt_{scenario_id}"))
+    b.row(InlineKeyboardButton(text="🔢 Порядок", callback_data=f"vidsc_edit_order_{scenario_id}"))
+    b.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"vidsc_view_{scenario_id}"))
+    return b.as_markup()
+
+def get_confirm_delete_keyboard_video(scenario_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(
+        InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"vidsc_delete_confirm_{scenario_id}"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data=f"vidsc_view_{scenario_id}")
+    )
+    return b.as_markup()

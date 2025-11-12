@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest
+from handlers.start import send_bot_message
 from states import ProductCardStates
 from keyboards import (get_back_button_product_card, get_confirmation_keyboard_product_card, 
                        get_repeat_button, get_back_to_generation, get_generation_menu)
@@ -62,10 +63,7 @@ async def product_card_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.clear()
     await state.set_state(ProductCardStates.waiting_for_photo)
-    await callback.message.edit_text(
-        "📦 Готовая карточка товара\n\n📸 Отправьте ОДНО фото для создания карточки товара.\n\nЯ создам серию изображений по разным сценам.\n\n✨ Можно отправить как фото или как файл", 
-        reply_markup=get_back_button("gen_product_card")
-    )
+    await send_bot_message(callback, "product_card", get_back_button("gen_product_card"))
 
 
 @router.message(ProductCardStates.waiting_for_photo, F.photo | F.document)

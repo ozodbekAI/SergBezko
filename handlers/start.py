@@ -11,7 +11,6 @@ router = Router()
 
 
 async def send_bot_message(callback_or_message, message_key: str, reply_markup):
-    """Bot xabarini yuborish (matn va media bilan)"""
     async with async_session_maker() as session:
         msg_repo = BotMessageRepository(session)
         bot_msg = await msg_repo.get_message(message_key)

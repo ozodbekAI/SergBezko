@@ -4,6 +4,7 @@ from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
+from handlers.start import send_bot_message
 from states import VideoStates
 from keyboards import (get_back_button_video, get_video_menu, get_video_scenarios, 
                        get_confirmation_keyboard, get_repeat_button, get_back_to_generation, get_generation_menu)
@@ -39,8 +40,7 @@ async def video_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.clear()
     await state.update_data(nav_stack=["gen_video"])
-    await callback.message.edit_text("🎬 Видео\n\nВыберите режим видео:", reply_markup=get_video_menu())
-
+    await send_bot_message(callback, "video", get_video_menu())
 
 @router.callback_query(F.data.in_(["video_balance", "video_pro6", "video_pro10", "video_super6"]))
 async def video_mode_selected(callback: CallbackQuery, state: FSMContext):

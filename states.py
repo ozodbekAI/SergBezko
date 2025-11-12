@@ -27,22 +27,19 @@ class VideoStates(StatesGroup):
 class PhotoStates(StatesGroup):
     waiting_for_photo = State()
     
-    # Scene uchun
     selecting_scene_category = State()
     selecting_scene_subcategory = State()
     selecting_scene_item = State()
     
-    # Pose uchun  
     selecting_pose_group = State()
     selecting_pose_subgroup = State()
     selecting_pose_prompt = State()
     
-    # Custom
     entering_custom_prompt = State()
     confirming = State()
 
 
-# ===== ADMIN STATES =====
+
 
 class AdminModelCategoryStates(StatesGroup):
     entering_category_name = State()
@@ -51,25 +48,36 @@ class AdminModelCategoryStates(StatesGroup):
     selecting_subcategory = State()
     entering_item_name = State()
     entering_item_prompt = State()
-    editing_item_name = State()         # добавлено
+    editing_item_name = State()         #
     editing_item_prompt = State()
 
 
 class AdminPoseStates(StatesGroup):
-    # Group (Category)
     entering_group_name = State()
     
-    # Subgroup (Subcategory)
     selecting_group = State()
     entering_subgroup_name = State()
-    
-    # Prompt (Item)
+
     selecting_subgroup = State()
     entering_prompt_name = State()
     entering_prompt_text = State()
     
-    # Edit
     editing_prompt_text = State()
+
+class AdminVideoScenarioStates(StatesGroup):
+    main = State()
+
+    entering_name = State()
+    entering_prompt = State()
+    entering_order = State()
+
+    selecting_scenario = State()
+    editing_menu = State()
+    editing_name = State()
+    editing_prompt = State()
+    editing_order = State()
+
+    confirming_delete = State()
 
 
 class AdminSceneCategoryStates(StatesGroup):
@@ -79,7 +87,7 @@ class AdminSceneCategoryStates(StatesGroup):
     selecting_subcategory = State()
     entering_item_name = State()
     entering_item_prompt = State()
-    editing_item_name = State()         # добавлено
+    editing_item_name = State()        
     editing_item_prompt = State()
 
 class AdminMessageStates(StatesGroup):

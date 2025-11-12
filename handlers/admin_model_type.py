@@ -26,8 +26,6 @@ async def safe_edit_text(callback: CallbackQuery, text: str, reply_markup=None, 
     except Exception as e:
         logger.error(f"Edit failed: {e}")
 
-
-# ===== MAIN MENU =====
 @router.callback_query(F.data == "admin_model_types")
 async def admin_model_categories_main(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -68,7 +66,6 @@ async def admin_model_categories_main(callback: CallbackQuery, state: FSMContext
     await safe_edit_text(callback, text, reply_markup=get_model_category_main_menu())
 
 
-# ===== ADD CATEGORY =====
 @router.callback_query(F.data == "model_cat_add_category")
 async def add_category_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -107,7 +104,6 @@ async def add_category_name(message: Message, state: FSMContext):
     )
 
 
-# ===== ADD SUBCATEGORY =====
 @router.callback_query(F.data == "model_cat_add_subcategory")
 async def add_subcategory_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -181,7 +177,6 @@ async def add_subcategory_name(message: Message, state: FSMContext):
     )
 
 
-# ===== ADD ITEM =====
 @router.callback_query(F.data == "model_cat_add_item")
 async def add_item_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -311,11 +306,6 @@ async def add_item_prompt(message: Message, state: FSMContext):
     )
 
 
-# ===== EDIT & DELETE (Pose/Scene bilan bir xil logika) =====
-
-# ----------------------------------------------------------------------
-# -----------------------  EDIT  ---------------------------------------
-# ----------------------------------------------------------------------
 @router.callback_query(F.data == "model_cat_edit_menu")
 async def model_edit_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -457,9 +447,6 @@ async def model_save_edited_item(message: Message, state: FSMContext):
     )
 
 
-# ----------------------------------------------------------------------
-# -----------------------  DELETE  -------------------------------------
-# ----------------------------------------------------------------------
 @router.callback_query(F.data == "model_cat_delete_menu")
 async def model_delete_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()

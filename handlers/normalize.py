@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from handlers.start import send_bot_message
 from states import NormalizeStates
 from keyboards import (get_back_button_normalize, get_back_button_normalize_with_buy, get_generation_menu, get_normalize_menu,
                        get_confirmation_keyboard_normalize, get_repeat_button, get_back_to_generation)
@@ -22,7 +23,7 @@ router = Router()
 async def normalize_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.clear()
-    await callback.message.edit_text("👗 Нормализация фото\n\nВыберите режим нормализации:", reply_markup=get_normalize_menu())
+    await send_bot_message(callback, "normalize", get_normalize_menu())
 
 
 @router.callback_query(F.data == "norm_own_model")

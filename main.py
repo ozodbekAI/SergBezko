@@ -7,7 +7,7 @@ from aiogram.enums import ParseMode
 from config import settings
 from database import engine
 from database.models import Base
-from handlers import admin_poses, admin_scene, start, product_card, normalize, video, photo, cabinet , common, admin, repeat_handler, admin_model_type
+from handlers import admin_poses, admin_scene, admin_video_scenarios, start, product_card, normalize, video, photo, cabinet , common, admin, repeat_handler, admin_model_type
 from middlewares.middlewares import BanCheckMiddleware 
 
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +46,7 @@ async def main():
     dp.include_router(admin_poses.router)
     dp.include_router(admin_scene.router)
     dp.include_router(admin_model_type.router)
+    dp.include_router(admin_video_scenarios.router)
     logger.info("Bot started")
     try:
         await dp.start_polling(bot, skip_updates=True)

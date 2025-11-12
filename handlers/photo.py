@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
+from handlers.start import send_bot_message
 from states import PhotoStates
 from keyboards import (
     get_back_to_generation_with_buy, get_generation_menu, get_photo_menu, get_back_button_photo, get_confirmation_keyboard_photo,
@@ -40,7 +41,7 @@ async def safe_edit_text(callback: CallbackQuery, text: str, reply_markup=None, 
 async def photo_start(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.clear()
-    await safe_edit_text(callback, "📸 <b>Фото</b>\n\nВыберите режим обработки фото:", reply_markup=get_photo_menu(), parse_mode="HTML")
+    await send_bot_message(callback, "photo", get_photo_menu())
 
 
 @router.callback_query(F.data == "photo_scene")
