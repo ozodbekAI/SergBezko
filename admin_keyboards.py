@@ -8,6 +8,7 @@ def get_admin_main_menu() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="👥 Управление пользователями", callback_data="admin_users"))
     builder.row(InlineKeyboardButton(text="📝 Изменить сообщения", callback_data="admin_messages"))
     builder.row(InlineKeyboardButton(text="🎬 Сценарии видео", callback_data="admin_video_scenarios"))
+    builder.row(InlineKeyboardButton(text="👗 Промпты нормализации", callback_data="admin_normalize_prompts"))
     builder.row(InlineKeyboardButton(text="👤 Типы моделей", callback_data="admin_model_types"))
     builder.row(InlineKeyboardButton(text="🤸 Управление позами", callback_data="admin_poses"))
     builder.row(InlineKeyboardButton(text="🌆 Управление сценами", callback_data="admin_scenes"))
@@ -503,4 +504,22 @@ def kb_back_to_admin_video_main() -> InlineKeyboardMarkup:
 def kb_back_to_edit_menu(scenario_id: int) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"vidsc_view_{scenario_id}"))
+    return b.as_markup()
+
+
+
+
+##Normalize Prompt States
+
+def get_admin_normalize_menu() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(
+        text="1️⃣ Промпт: манекен (1-я фото)", 
+        callback_data="admin_norm_edit_1"
+    ))
+    b.row(InlineKeyboardButton(
+        text="2️⃣ Промпт: своя фотомодель (2-я фото)", 
+        callback_data="admin_norm_edit_2"
+    ))
+    b.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_back"))
     return b.as_markup()

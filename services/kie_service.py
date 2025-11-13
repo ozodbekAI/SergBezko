@@ -9,7 +9,7 @@ from config import settings
 import logging
 
 from database import async_session_maker
-from database.repositories import SceneCategoryRepository
+from database.repositories import BotMessageRepository, SceneCategoryRepository
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,31 @@ class KIEService:
             "Authorization": f"Bearer {self.api_key}"
         }
     
+    DEFAULT_GHOST_PROMPT = (
+        "Create a ghost mannequin from the reference image: transparent body, "
+        "light background, no face, professional product photography, high detail, photorealistic."
+    )
+
+    DEFAULT_OWN_COMBINE_PROMPT = (
+        "Professional product normalization: Take the ghost mannequin from the first reference image "
+        "and place it on the model from the second reference image. "
+        "Match pose, lighting, and style perfectly. Maintain product details, natural lighting, high quality, photorealistic."
+    )
+
+    async def _get_normalize_prompts(self) -> tuple[str, str]:
+        """
+        1) ghost_prompt  - birinchi rasm (maneken / ghost) uchun
+        2) own_combine   - 'Есть своя фотомодель' rejimida ghost + modelni birlashtirish uchun
+        """
+        async with async_session_maker() as session:
+            msg_repo = BotMessageRepository(session)
+            ghost_msg = await msg_repo.get_message("normalize_prompt_step1")
+            own_msg = await msg_repo.get_message("normalize_prompt_step2_own")
+
+        ghost_prompt = (ghost_msg.text if ghost_msg and ghost_msg.text else self.DEFAULT_GHOST_PROMPT)
+        own_combine_prompt = (own_msg.text if own_msg and own_msg.text else self.DEFAULT_OWN_COMBINE_PROMPT)
+        return ghost_prompt, own_combine_prompt
+
     def get_model_base(self, model: str) -> str:
         return model.split('/')[0]
     
@@ -221,20 +246,30 @@ class KIEService:
 
     async def normalize_own_model(self, item_image_url: str, model_image_url: str) -> dict:
         model = "google/nano-banana-edit"
-        ghost_prompt = "Create a ghost mannequin from the reference image: transparent body, light background, no face, professional product photography, high detail, photorealistic."
-        input_data_ghost = {"prompt": ghost_prompt, "image_urls": [item_image_url], "output_format": "png", "image_size": "1:1"}
+
+        # 1) PROMPT – ghost / maneken (ikkala tugma uchun umumiy)
+        ghost_prompt, own_combine_prompt = await self._get_normalize_prompts()
+
+        # 1-qadam: itemdan ghost / maneken
+        input_data_ghost = {
+            "prompt": ghost_prompt,
+            "image_urls": [item_image_url],
+            "output_format": "png",
+            "image_size": "1:1"
+        }
         task_id_ghost = await asyncio.to_thread(self.create_task, model, input_data_ghost)
         ghost_result = await self.poll_task(task_id_ghost)
         if "resultUrls" not in ghost_result or not ghost_result["resultUrls"]:
             raise ValueError("No ghost image in result")
         ghost_url = ghost_result["resultUrls"][0]
 
-        combine_prompt = (
-            "Professional product normalization: Take the ghost mannequin from the first reference image "
-            "and place it on the model from the second reference image. "
-            "Match pose, lighting, and style perfectly. Maintain product details, natural lighting, high quality, photorealistic."
-        )
-        input_data_combine = {"prompt": combine_prompt, "image_urls": [ghost_url, model_image_url], "output_format": "png", "image_size": "1:1"}
+        # 2) PROMPT – admin kiritgan 'own' kombinat promnti
+        input_data_combine = {
+            "prompt": own_combine_prompt,
+            "image_urls": [ghost_url, model_image_url],
+            "output_format": "png",
+            "image_size": "1:1"
+        }
         task_id_combine = await asyncio.to_thread(self.create_task, model, input_data_combine)
         combine_result = await self.poll_task(task_id_combine)
         if "resultUrls" in combine_result and combine_result["resultUrls"]:
@@ -243,19 +278,35 @@ class KIEService:
 
     async def normalize_new_model(self, item_image_url: str, model_prompt: str) -> dict:
         model = "google/nano-banana-edit"
-        ghost_prompt = "Create a ghost mannequin from the reference image: transparent body, light background, no face, professional product photography, high detail, photorealistic."
-        input_data_ghost = {"prompt": ghost_prompt, "image_urls": [item_image_url], "output_format": "png", "image_size": "1:1"}
+
+        # Faqat 1-PROMPT (ghost) – admin paneldan
+        ghost_prompt, _ = await self._get_normalize_prompts()
+
+        # 1-qadam: itemdan ghost / maneken
+        input_data_ghost = {
+            "prompt": ghost_prompt,
+            "image_urls": [item_image_url],
+            "output_format": "png",
+            "image_size": "1:1"
+        }
         task_id_ghost = await asyncio.to_thread(self.create_task, model, input_data_ghost)
         ghost_result = await self.poll_task(task_id_ghost)
         if "resultUrls" not in ghost_result or not ghost_result["resultUrls"]:
             raise ValueError("No ghost image in result")
         ghost_url = ghost_result["resultUrls"][0]
 
+        # 2-qadam: yangi fotomodelni AI bilan generatsiya qilish (oldingidek)
         combine_prompt = (
-            "Professional product normalization: Take the ghost mannequin from the reference image and place it on a new model described as: "
+            "Professional product normalization: Take the ghost mannequin from the reference image "
+            "and place it on a new model described as: "
             f"{model_prompt}. High quality, photorealistic, studio lighting, natural pose."
         )
-        input_data_combine = {"prompt": combine_prompt, "image_urls": [ghost_url], "output_format": "png", "image_size": "1:1"}
+        input_data_combine = {
+            "prompt": combine_prompt,
+            "image_urls": [ghost_url],
+            "output_format": "png",
+            "image_size": "1:1"
+        }
         task_id_combine = await asyncio.to_thread(self.create_task, model, input_data_combine)
         combine_result = await self.poll_task(task_id_combine)
         if "resultUrls" in combine_result and combine_result["resultUrls"]:

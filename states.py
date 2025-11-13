@@ -94,6 +94,11 @@ class AdminMessageStates(StatesGroup):
     entering_text = State()
     uploading_media = State()
 
+class AdminNormalizePromptStates(StatesGroup):
+    choosing = State()
+    entering_prompt1 = State()
+    entering_prompt2 = State()
+
 
 class AdminUserStates(StatesGroup):
     searching_user = State()
