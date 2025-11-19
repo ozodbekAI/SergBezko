@@ -69,7 +69,7 @@ def get_back_to_generation_with_buy():
 
 def get_main_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🪄 Генерация", callback_data="main_generation"))
+    builder.row(InlineKeyboardButton(text="🪄 Fashion-инструменты", callback_data="main_generation"))
     builder.row(InlineKeyboardButton(text="👤 Мой кабинет", callback_data="main_cabinet"))
     return builder.as_markup()
 
@@ -77,7 +77,7 @@ def get_main_menu() -> InlineKeyboardMarkup:
 def get_generation_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📦 Готовая карточка товара", callback_data="gen_product_card"))
-    builder.row(InlineKeyboardButton(text="👗 Нормализация фото", callback_data="gen_normalize"))
+    builder.row(InlineKeyboardButton(text="👗 Улучшить фото", callback_data="gen_normalize"))
     builder.row(InlineKeyboardButton(text="🎬 Видео", callback_data="gen_video"))
     builder.row(InlineKeyboardButton(text="📸 Фото", callback_data="gen_photo"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main"))
