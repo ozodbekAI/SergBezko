@@ -135,12 +135,14 @@ def get_user_list_keyboard(users: List, offset: int = 0) -> InlineKeyboardMarkup
 def get_message_selection_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🏠 Стартовое сообщение", callback_data="edit_msg_start"))
+    builder.row(InlineKeyboardButton(text="📦 Генерация (главное)", callback_data="edit_msg_main_generation"))
     builder.row(InlineKeyboardButton(text="📦 Карточка товара", callback_data="edit_msg_product_card"))
     builder.row(InlineKeyboardButton(text="👗 Нормализация", callback_data="edit_msg_normalize"))
     builder.row(InlineKeyboardButton(text="🎬 Видео", callback_data="edit_msg_video"))
     builder.row(InlineKeyboardButton(text="📸 Фото", callback_data="edit_msg_photo"))
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_back"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_back_main"))
     return builder.as_markup()
+
 
 
 def get_media_type_keyboard() -> InlineKeyboardMarkup:

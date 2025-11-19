@@ -667,7 +667,6 @@ async def seed_video_scenarios() -> None:
                 order_idx += 1
 
 
-# ---------------------- MAIN ---------------------- #
 async def main():
     log.info("=== START MIGRATION: Scenes, Poses, Video Scenarios ===")
     await seed_scenes()

@@ -15,9 +15,9 @@ async def send_bot_message(callback_or_message, message_key: str, reply_markup):
         msg_repo = BotMessageRepository(session)
         bot_msg = await msg_repo.get_message(message_key)
     
-
     default_texts = {
         "start": "👋 Добро пожаловать в бот для генерации контента!\n\nВыберите раздел:",
+        "main_generation": "Выберите тип генерации:",
         "product_card": "📦 Готовая карточка товара\n\n📸 Отправьте ОДНО фото для создания карточки товара.",
         "normalize": "👗 Нормализация фото\n\nВыберите режим нормализации:",
         "video": "🎬 Видео\n\nВыберите режим видео:",
@@ -26,7 +26,6 @@ async def send_bot_message(callback_or_message, message_key: str, reply_markup):
     
     text = bot_msg.text if bot_msg else default_texts.get(message_key, "Текст не установлен")
     
-
     if isinstance(callback_or_message, Message):
         message = callback_or_message
         if bot_msg and bot_msg.media_type == "photo" and bot_msg.media_file_id:
@@ -44,16 +43,13 @@ async def send_bot_message(callback_or_message, message_key: str, reply_markup):
         else:
             await message.answer(text, reply_markup=reply_markup)
     else:
-
         callback = callback_or_message
         if bot_msg and bot_msg.media_type in ["photo", "video"]:
-
             try:
                 await callback.message.delete()
             except:
                 pass
             
-
             if bot_msg.media_type == "photo":
                 await callback.message.answer_photo(
                     photo=bot_msg.media_file_id,
@@ -89,22 +85,7 @@ async def show_main_menu(message: Message, state: FSMContext):
 async def generation_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.clear()
-    
-
-    if callback.message.text is None:
-        try:
-            await callback.message.delete()
-        except:
-            pass  
-        await callback.message.answer(  
-            "Выберите тип генерации:", 
-            reply_markup=get_generation_menu()
-        )
-    else:
-        await callback.message.edit_text(
-            "Выберите тип генерации:", 
-            reply_markup=get_generation_menu()
-        )
+    await send_bot_message(callback, "main_generation", get_generation_menu())
 
 
 @router.callback_query(F.data == "main_cabinet")
@@ -125,15 +106,14 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
     await send_bot_message(callback, "start", get_main_menu())
 
 
-
-
-#ADMIN ME
+# ADMIN ME
 @router.message(F.text == "admin_me_77229911")
-async def admin_me(message: Message,):
+async def admin_me(message: Message):
     async with async_session_maker() as session:
         user_repo = UserRepository(session)
-        try:
+        user = await user_repo.get_user_by_telegram_id(message.from_user.id)
+        if user and user.is_admin:
+            await message.answer("Вы уже администратор!")
+        else:
             await user_repo.admin_me(message.from_user.id)
-        except:
-            await message.answer("Вы уже администратор!", show_alert=True)
-    await message.answer("Вы теперь администратор!", show_alert=True)
+            await message.answer("Вы теперь администратор!")

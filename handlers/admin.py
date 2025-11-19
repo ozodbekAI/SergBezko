@@ -604,7 +604,17 @@ async def select_message_to_edit(callback: CallbackQuery, state: FSMContext):
         msg_repo = BotMessageRepository(session)
         bot_msg = await msg_repo.get_message(message_key)
     
-    current_text = bot_msg.text if bot_msg else "Не установлено"
+    # Default texts
+    default_texts = {
+        "start": "👋 Добро пожаловать в бот для генерации контента!\n\nВыберите раздел:",
+        "main_generation": "Выберите тип генерации:",
+        "product_card": "📦 Готовая карточка товара\n\n📸 Отправьте ОДНО фото для создания карточки товара.",
+        "normalize": "👗 Нормализация фото\n\nВыберите режим нормализации:",
+        "video": "🎬 Видео\n\nВыберите режим видео:",
+        "photo": "📸 Фото\n\nВыберите режим обработки фото:"
+    }
+    
+    current_text = bot_msg.text if bot_msg else default_texts.get(message_key, "Не установлено")
     media_info = ""
     if bot_msg and bot_msg.media_type:
         media_info = f"\n🔎 Медиа: {bot_msg.media_type}"
@@ -614,8 +624,8 @@ async def select_message_to_edit(callback: CallbackQuery, state: FSMContext):
     
     await safe_edit_text(
         callback,
-        f"✏️ <b>Редактирование сообщения</b>\n\n"
-        f"Текущий текст:\n{current_text}{media_info}\n\n"
+        f"✏️ <b>Редактирование сообщения: {message_key}</b>\n\n"
+        f"Текущий текст:\n<code>{current_text}</code>{media_info}\n\n"
         f"Введите новый текст сообщения:",
         reply_markup=get_admin_back_keyboard()
     )
@@ -707,3 +717,19 @@ async def media_received(message: Message, state: FSMContext):
         reply_markup=get_admin_main_menu()
     )
     await state.clear()
+
+
+@router.callback_query(F.data == "admin_back")
+async def admin_back_to_messages(callback: CallbackQuery, state: FSMContext):
+    if not await check_admin(callback):
+        await callback.answer("❌ Нет доступа")
+        return
+    
+    await callback.answer()
+    await state.clear()
+    await safe_edit_text(
+        callback,
+        "📝 <b>Управление сообщениями бота</b>\n\n"
+        "Выберите сообщение для редактирования:",
+        reply_markup=get_message_selection_keyboard()
+    )
