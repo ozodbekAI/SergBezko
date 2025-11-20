@@ -2,6 +2,9 @@ import yaml
 import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from database import async_session_maker
+from database.repositories import PaymentPackageRepository
+
 
 class ConfigLoader:
     def __init__(self):
@@ -53,7 +56,7 @@ class ConfigLoader:
     @property
     def video_scenarios(self) -> Dict[str, Any]:
         if self._video_scenarios is None:
-            self._video_scenarios = self._load_yaml("video_scenarios.yaml")  # Fixed: added missing 'o'
+            self._video_scenarios = self._load_yaml("video_scenarios.yaml")
         return self._video_scenarios
 
     def get_scene_groups(self) -> List[Dict[str, str]]:
@@ -98,8 +101,33 @@ class ConfigLoader:
                 return m
         raise ValueError(f"Model type not found: {model_id}")
 
-    def get_payment_packages(self) -> List[Dict[str, Any]]:
-        """Get payment packages from pricing"""
+    async def get_payment_packages(self) -> List[Dict[str, Any]]:
+        """
+        Database'dan payment paketlarini olish.
+        Agar database'da bo'lmasa, JSON'dan fallback qilish.
+        """
+        try:
+            async with async_session_maker() as session:
+                pkg_repo = PaymentPackageRepository(session)
+                packages = await pkg_repo.get_all_packages(only_active=True)
+                
+                if packages:
+                    # Database'dan olingan paketlarni formatlash
+                    return [
+                        {
+                            "label": pkg.label,
+                            "credits": pkg.credits,
+                            "price": pkg.price,
+                            "bonus": pkg.bonus
+                        }
+                        for pkg in packages
+                    ]
+        except Exception as e:
+            # Agar database'da xatolik bo'lsa, JSON'dan o'qish
+            import logging
+            logging.warning(f"Failed to load packages from DB, using JSON fallback: {e}")
+        
+        # Fallback: JSON'dan o'qish
         return self.pricing.get("packages", [])
     
     def get_video_scenario_by_id(self, scenario_id: str) -> Dict[str, Any]:

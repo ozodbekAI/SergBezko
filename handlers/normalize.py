@@ -235,7 +235,7 @@ async def confirm_normalize(callback: CallbackQuery, state: FSMContext):
         await user_repo.update_balance(callback.from_user.id, -cost)
         user = await user_repo.get_user_by_telegram_id(callback.from_user.id)
     
-    await callback.message.edit_text("⏳ Нормализация началась...")
+    await callback.message.edit_text("⏳ Магия началась...")
     
     try:
         if mode == "own_model":

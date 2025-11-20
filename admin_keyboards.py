@@ -13,6 +13,7 @@ def get_admin_main_menu() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="🤸 Управление позами", callback_data="admin_poses"))
     builder.row(InlineKeyboardButton(text="🌆 Управление сценами", callback_data="admin_scenes"))
     builder.row(InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"))
+    builder.row(InlineKeyboardButton(text="💳 Пакеты пополнения", callback_data="admin_packages"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main"))
     return builder.as_markup()
 
@@ -23,6 +24,15 @@ def get_scene_main_menu() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="✏️ Редактировать промпт", callback_data="scene_edit_prompt_menu"))
     builder.row(InlineKeyboardButton(text="🗑 Удалить промпт", callback_data="scene_delete_prompt_menu"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_back"))
+    return builder.as_markup()
+
+def get_balance_action_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="➕ Добавить", callback_data=f"balance_add_{user_id}"),
+        InlineKeyboardButton(text="➖ Убавить", callback_data=f"balance_subtract_{user_id}")
+    )
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"user_view_{user_id}"))
     return builder.as_markup()
 
 

@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func
 from sqlalchemy.orm import selectinload
-from database.models import (ModelCategory, ModelItem, ModelSubcategory, User, Task, Payment, UserState, TaskStatus, TaskType,
+from database.models import (ModelCategory, ModelItem, ModelSubcategory, PaymentPackage, User, Task, Payment, UserState, TaskStatus, TaskType,
                              BotMessage, PoseGroup, PoseSubgroup, PosePrompt,
                              SceneCategory, SceneSubcategory, SceneItem,
                              AdminLog)
@@ -785,3 +785,219 @@ class VideoScenarioRepository:
     async def delete(self, scenario_id: int) -> None:
         await self.session.execute(delete(VideoScenario).where(VideoScenario.id == scenario_id))
         await self.session.commit()
+
+
+class PaymentPackageRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+    
+    async def get_all_packages(self, only_active: bool = True) -> List[PaymentPackage]:
+        """Barcha paketlarni olish"""
+        query = select(PaymentPackage).order_by(PaymentPackage.order_index)
+        if only_active:
+            query = query.where(PaymentPackage.is_active == True)
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+    
+    async def get_package_by_id(self, package_id: int) -> Optional[PaymentPackage]:
+        """ID bo'yicha paket olish"""
+        result = await self.session.execute(
+            select(PaymentPackage).where(PaymentPackage.id == package_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def add_package(self, label: str, credits: int, price: float, 
+                         bonus: Optional[str] = None, order_index: int = 0) -> PaymentPackage:
+        package = PaymentPackage(
+            label=label,
+            credits=credits,
+            price=price,
+            bonus=bonus,
+            order_index=order_index
+        )
+        self.session.add(package)
+        await self.session.commit()
+        await self.session.refresh(package)
+        return package
+    
+    async def update_package(self, package_id: int, label: Optional[str] = None,
+                           credits: Optional[int] = None, price: Optional[float] = None,
+                           bonus: Optional[str] = None, order_index: Optional[int] = None,
+                           is_active: Optional[bool] = None) -> Optional[PaymentPackage]:
+        package = await self.get_package_by_id(package_id)
+        if not package:
+            return None
+        
+        if label is not None:
+            package.label = label
+        if credits is not None:
+            package.credits = credits
+        if price is not None:
+            package.price = price
+        if bonus is not None:
+            package.bonus = bonus
+        if order_index is not None:
+            package.order_index = order_index
+        if is_active is not None:
+            package.is_active = is_active
+        
+        await self.session.commit()
+        await self.session.refresh(package)
+        return package
+    
+    async def delete_package(self, package_id: int) -> bool:
+        await self.session.execute(
+            delete(PaymentPackage).where(PaymentPackage.id == package_id)
+        )
+        await self.session.commit()
+        return True
+    
+    async def toggle_active(self, package_id: int) -> Optional[PaymentPackage]:
+        package = await self.get_package_by_id(package_id)
+        if package:
+            package.is_active = not package.is_active
+            await self.session.commit()
+            await self.session.refresh(package)
+        return package
+
+
+class UserRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+    
+    async def get_or_create_user(self, telegram_id: int, username: Optional[str] = None,
+                                  first_name: Optional[str] = None, last_name: Optional[str] = None) -> User:
+        result = await self.session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
+                balance=0
+            )
+            self.session.add(user)
+            await self.session.commit()
+            await self.session.refresh(user)
+        else:
+            user.username = username
+            user.first_name = first_name
+            user.last_name = last_name
+            user.last_activity = datetime.utcnow()
+            await self.session.commit()
+        
+        return user
+    
+    async def admin_me(self, telegram_id: int) -> Optional[User]:
+        result = await self.session.execute(
+        select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if user:
+            user.is_admin = True
+            await self.session.commit()
+            return user
+        return None
+    
+    async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:
+        result = await self.session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def is_admin(self, telegram_id: int) -> bool:
+        user = await self.get_user_by_telegram_id(telegram_id)
+        return user and user.is_admin
+    
+    async def is_banned(self, telegram_id: int) -> bool:
+        user = await self.get_user_by_telegram_id(telegram_id)
+        return user and user.is_banned
+    
+    async def ban_user(self, telegram_id: int) -> Optional[User]:
+        user = await self.get_user_by_telegram_id(telegram_id)
+        if user:
+            user.is_banned = True
+            await self.session.commit()
+            await self.session.refresh(user)
+        return user
+    
+    async def unban_user(self, telegram_id: int) -> Optional[User]:
+        user = await self.get_user_by_telegram_id(telegram_id)
+        if user:
+            user.is_banned = False
+            await self.session.commit()
+            await self.session.refresh(user)
+        return user
+    
+    async def update_balance(self, telegram_id: int, amount: int) -> Optional[User]:
+        user = await self.get_user_by_telegram_id(telegram_id)
+        if user:
+            user.balance += amount
+            await self.session.commit()
+            await self.session.refresh(user)
+        return user
+    
+    async def check_balance(self, telegram_id: int, required: int) -> bool:
+        user = await self.get_user_by_telegram_id(telegram_id)
+        return user and user.balance >= required
+    
+    async def get_total_users(self) -> int:
+        result = await self.session.execute(select(func.count(User.id)))
+        return result.scalar()
+    
+    async def get_total_active_users(self, days: int = 30) -> int:
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        result = await self.session.execute(
+            select(func.count(User.id)).where(User.last_activity >= cutoff)
+        )
+        return result.scalar()
+    
+    async def get_banned_count(self) -> int:
+        result = await self.session.execute(
+            select(func.count(User.id)).where(User.is_banned == True)
+        )
+        return result.scalar()
+    
+    async def get_banned_users(self, limit: int = 20, offset: int = 0) -> List[User]:
+        result = await self.session.execute(
+            select(User)
+            .where(User.is_banned == True)
+            .order_by(User.last_activity.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all())
+    
+    async def get_all_users(self, limit: int = 20, offset: int = 0) -> List[User]:
+        result = await self.session.execute(
+            select(User)
+            .order_by(User.last_activity.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all())
+    
+    async def search_users(self, query: str) -> List[User]:
+        query = query.strip()
+        
+        if query.isdigit():
+            telegram_id = int(query)
+            result = await self.session.execute(
+                select(User).where(User.telegram_id == telegram_id)
+            )
+            user = result.scalar_one_or_none()
+            return [user] if user else []
+        
+        result = await self.session.execute(
+            select(User).where(
+                (User.username.ilike(f"%{query}%")) |
+                (User.first_name.ilike(f"%{query}%")) |
+                (User.last_name.ilike(f"%{query}%"))
+            ).limit(20)
+        )
+        return list(result.scalars().all())

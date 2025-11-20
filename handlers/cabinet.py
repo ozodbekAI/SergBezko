@@ -23,7 +23,8 @@ async def show_balance(callback: CallbackQuery, state: FSMContext):
         user_repo = UserRepository(session)
         user = await user_repo.get_user_by_telegram_id(callback.from_user.id)
     
-    packages = config_loader.get_payment_packages()
+    # Database'dan paketlarni olish (async)
+    packages = await config_loader.get_payment_packages()
     
     text = (
         f"💰 Ваш текущий баланс: {user.balance} кредитов\n\n"
@@ -230,7 +231,7 @@ async def show_faq(callback: CallbackQuery, state: FSMContext):
 • Если проблема повторяется, попробуйте другое фото
 
 <b>💳 Пополнение баланса:</b>
-• Доступны пакеты: 30, 120, 350 кредитов
+• Доступны пакеты из базы данных
 • Оплата через ЮKassa (безопасно)
 • Зачисление автоматическое после оплаты
     """.format(

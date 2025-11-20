@@ -339,12 +339,11 @@ async def apply_pose_prompt(callback: CallbackQuery, state: FSMContext):
         "type": "photo",
         "mode": "pose_change",
         "photo_url": photo_url,
-        "prompt_id": prompt.id,            # Pose prompt ID
+        "prompt_id": prompt.id,            
         "cost": cost
     })
 
 
-# ===== CUSTOM PROMPT =====
 @router.message(PhotoStates.entering_custom_prompt, F.text)
 async def custom_prompt_received(message: Message, state: FSMContext):
     prompt = await translator_service.translate_ru_to_en(message.text)

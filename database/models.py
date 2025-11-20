@@ -58,6 +58,7 @@ class Task(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+
 class VideoScenario(Base):
     __tablename__ = "video_scenarios"
 
@@ -82,6 +83,19 @@ class Payment(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
+class PaymentPackage(Base):
+    __tablename__ = "payment_packages"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    label: Mapped[str] = mapped_column(String(255))
+    credits: Mapped[int] = mapped_column(Integer)
+    price: Mapped[float] = mapped_column(Float)
+    bonus: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class UserState(Base):
     __tablename__ = "user_states"
     
@@ -103,10 +117,7 @@ class BotMessage(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-
-
 class PoseGroup(Base):
-
     __tablename__ = "pose_groups"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -192,7 +203,7 @@ class SceneCategory(Base):
     __tablename__ = "scene_categories"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255))  # Masalan: "Interer", "Ekster"
+    name: Mapped[str] = mapped_column(String(255))
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -207,7 +218,7 @@ class SceneSubcategory(Base):
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     category_id: Mapped[int] = mapped_column(Integer, ForeignKey("scene_categories.id", ondelete="CASCADE"), index=True)
-    name: Mapped[str] = mapped_column(String(255))  # Masalan: "Boutik", "Kafe"
+    name: Mapped[str] = mapped_column(String(255))
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -221,17 +232,13 @@ class SceneItem(Base):
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     subcategory_id: Mapped[int] = mapped_column(Integer, ForeignKey("scene_subcategories.id", ondelete="CASCADE"), index=True)
-    name: Mapped[str] = mapped_column(String(255))  # Masalan: "Dalniy plan", "Sredniy plan"
+    name: Mapped[str] = mapped_column(String(255))
     prompt: Mapped[str] = mapped_column(Text)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     subcategory: Mapped["SceneSubcategory"] = relationship("SceneSubcategory", back_populates="items")
-
-
-
-
 
 
 class AdminLog(Base):
