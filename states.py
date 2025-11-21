@@ -4,8 +4,8 @@ from aiogram.fsm.state import State, StatesGroup
 class ProductCardStates(StatesGroup):
     waiting_for_photo = State()
     selecting_scene_category = State()
-    selecting_scene_subcategory = State()
-    selecting_scene_item = State()
+    selecting_multiple_scenes = State()  
+    selecting_multiple_categories = State()
     confirming = State()
 
 

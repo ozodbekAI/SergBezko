@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     
     RETENTION_HOURS: int = 24
     ADMIN_IDS: str = ""
+
+    TELEGRAM_API_SERVER: str = ""
     
     @property
     def admin_list(self) -> List[int]:

@@ -314,7 +314,9 @@ async def toggle_package(callback: CallbackQuery, state: FSMContext):
     await view_package_detail(callback, state)
 
 
-@router.callback_query(F.data.startswith("pkg_delete_"))
+@router.callback_query(
+    F.data.startswith("pkg_delete_") & ~F.data.startswith("pkg_delete_confirm_")
+)
 async def delete_package_confirm(callback: CallbackQuery, state: FSMContext):
     if not await check_admin(callback):
         await callback.answer("❌ Нет доступа")
@@ -325,8 +327,14 @@ async def delete_package_confirm(callback: CallbackQuery, state: FSMContext):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"pkg_delete_confirm_{package_id}"),
-        InlineKeyboardButton(text="❌ Отмена", callback_data=f"pkg_view_{package_id}")
+        InlineKeyboardButton(
+            text="✅ Да, удалить",
+            callback_data=f"pkg_delete_confirm_{package_id}"
+        ),
+        InlineKeyboardButton(
+            text="❌ Отмена",
+            callback_data=f"pkg_view_{package_id}"
+        )
     )
     
     await callback.message.edit_text(

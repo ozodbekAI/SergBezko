@@ -116,10 +116,10 @@ def get_confirmation_keyboard_normalize(cost: int, back_data: str = "confirming"
 
 def get_video_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="⚖️ Баланс — Grok", callback_data="video_balance"))
-    builder.row(InlineKeyboardButton(text="⭐ Про 6 сек — hailuo 768p", callback_data="video_pro6"))
-    builder.row(InlineKeyboardButton(text="⭐⭐ Про 10 сек — hailuo 768p", callback_data="video_pro10"))
-    builder.row(InlineKeyboardButton(text="⭐⭐⭐ Супер Про 6 сек — hailuo 1080p", callback_data="video_super6"))
+    builder.row(InlineKeyboardButton(text="⚖️ Мне просто нормальное видео", callback_data="video_balance"))
+    builder.row(InlineKeyboardButton(text="⭐ Аккуратная динамика", callback_data="video_pro6"))
+    builder.row(InlineKeyboardButton(text="⭐⭐ Длинный кадр", callback_data="video_pro10"))
+    builder.row(InlineKeyboardButton(text="⭐⭐⭐ Вау-текстури", callback_data="video_super6"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="video_back_gen_video"))
     return builder.as_markup()
 
