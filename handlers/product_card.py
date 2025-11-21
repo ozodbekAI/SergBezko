@@ -64,13 +64,14 @@ def get_confirmation_keyboard(cost: int, back_data: str = "selecting_scene_categ
     return builder.as_markup()
 
 
-def get_back_and_download_buttons():
+def get_back_and_download_buttons(download: bool = True):
     """Generatsiya tugagandan keyin ZIP yuklash tugmalari"""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text="📥 Скачать все",
-        callback_data="pc_download_all"
-    ))
+    if download:
+        builder.row(InlineKeyboardButton(
+            text="📥 Скачать все",
+            callback_data="pc_download_all"
+        ))
     builder.row(InlineKeyboardButton(
         text="◀️ Назад",
         callback_data="pc_back_selecting_scene_category"
@@ -726,7 +727,7 @@ async def download_all_as_zip(callback: CallbackQuery, state: FSMContext):
                         filename=f"product_cards_{timestamp}.zip"
                     ),
                     caption=f"📦 Все изображения ({len(results)} шт.)",
-                    reply_markup=get_back_and_download_buttons(),
+                    reply_markup=get_back_and_download_buttons(download=False),
                     request_timeout=300  
                 )
             except Exception as e:
@@ -734,7 +735,7 @@ async def download_all_as_zip(callback: CallbackQuery, state: FSMContext):
                 await callback.message.answer(
                     "❌ Файл слишком большой для отправки.\n"
                     "Попробуйте выбрать меньше категорий.",
-                    reply_markup=get_back_and_download_buttons()
+                    reply_markup=get_back_and_download_buttons(download=False)
                 )
         else:
             sent_parts = 0
@@ -753,7 +754,7 @@ async def download_all_as_zip(callback: CallbackQuery, state: FSMContext):
                     logger.error(f"Failed to send ZIP part {part_num}: {e}")
                     await callback.message.answer(
                         f"❌ Ошибка при отправке части {part_num}",
-                        reply_markup=get_back_and_download_buttons()
+                        reply_markup=get_back_and_download_buttons(download=False)
                     )
                     break
             
@@ -762,7 +763,7 @@ async def download_all_as_zip(callback: CallbackQuery, state: FSMContext):
                     f"✅ Все файлы отправлены!\n\n"
                     f"Всего частей: {len(zip_parts)}\n"
                     f"Изображений: {len(results)}",
-                    reply_markup=get_back_and_download_buttons()
+                    reply_markup=get_back_and_download_buttons(download=False)
                 )
         
     except Exception as e:
